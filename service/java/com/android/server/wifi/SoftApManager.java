@@ -26,6 +26,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.MacAddress;
+import android.net.wifi.OuiKeyedData;
 import android.net.wifi.ScanResult;
 import android.net.wifi.SoftApCapability;
 import android.net.wifi.SoftApConfiguration;
@@ -546,6 +547,12 @@ public class SoftApManager implements ActiveModeManager {
         long timeout = mCurrentSoftApConfiguration
                 .getBridgedModeOpportunisticShutdownTimeoutMillisInternal();
         return timeout > 0 ? timeout : mDefaultShutdownIdleInstanceInBridgedModeTimeoutMillis;
+    }
+
+    private List<OuiKeyedData> getVendorData() {
+        return (SdkLevel.isAtLeastV() && mCurrentSoftApConfiguration != null)
+                ? mCurrentSoftApConfiguration.getVendorData()
+                : new ArrayList<>();
     }
 
     private String getHighestFrequencyInstance(Set<String> candidateInstances) {
@@ -1293,7 +1300,7 @@ public class SoftApManager implements ActiveModeManager {
                         mApInterfaceName = mWifiNative.setupInterfaceForSoftApMode(
                                 mWifiNativeInterfaceCallback, mRequestorWs,
                                 mCurrentSoftApConfiguration.getBand(), isBridgeRequired(),
-                                SoftApManager.this,
+                                SoftApManager.this, getVendorData(),
                                 mCurrentSoftApConfiguration.getSecurityType());
                         if (TextUtils.isEmpty(mApInterfaceName)) {
                             Log.e(getTag(), "setup failure when creating ap interface.");
@@ -1409,7 +1416,7 @@ public class SoftApManager implements ActiveModeManager {
                             mApInterfaceName = mWifiNative.setupInterfaceForSoftApMode(
                                     mWifiNativeInterfaceCallback, mRequestorWs,
                                     mCurrentSoftApConfiguration.getBand(), isBridgeRequired(),
-                                    SoftApManager.this);
+                                    SoftApManager.this, getVendorData(), mCurrentSoftApConfiguration.getSecurityType());
                             if (TextUtils.isEmpty(mApInterfaceName)) {
                                 Log.e(getTag(), "setup failure when creating single AP iface");
                                 handleStartSoftApFailure(START_RESULT_FAILURE_GENERAL);
