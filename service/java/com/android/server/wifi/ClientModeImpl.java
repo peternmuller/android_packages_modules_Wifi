@@ -301,6 +301,8 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
      * when obtained for the first 10 seconds of L2 connection */
     private boolean mIpReachabilityMonitorActive = true;
 
+    private boolean mIpProvisioningTimedOut = false;
+
     private String getTag() {
         return TAG + "[" + mId + ":" + (mInterfaceName == null ? "unknown" : mInterfaceName) + "]";
     }
@@ -455,6 +457,9 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
     static final int CMD_ONESHOT_RSSI_POLL                              = BASE + 84;
     /* Enable suspend mode optimizations in the driver */
     static final int CMD_SET_SUSPEND_OPT_ENABLED                        = BASE + 86;
+    /* L3 provisioning timed out*/
+    static final int CMD_IP_PROVISIONING_TIMEOUT                        = BASE + 87;
+
 
     /**
      * Watchdog for protecting against b/16823537
@@ -565,7 +570,8 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
 
     @VisibleForTesting
     static final int CMD_PRE_DHCP_ACTION                                = BASE + 255;
-    private static final int CMD_PRE_DHCP_ACTION_COMPLETE               = BASE + 256;
+    @VisibleForTesting
+    static final int CMD_PRE_DHCP_ACTION_COMPLETE                       = BASE + 256;
     private static final int CMD_POST_DHCP_ACTION                       = BASE + 257;
 
     private static final int CMD_CONNECT_NETWORK                        = BASE + 258;
@@ -595,6 +601,11 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
     private static final int SUSPEND_DUE_TO_DHCP = 1;
     private static final int SUSPEND_DUE_TO_HIGH_PERF = 1 << 1;
     private static final int SUSPEND_DUE_TO_SCREEN = 1 << 2;
+
+    /* Timeout after which a network connection stuck in L3 provisioning is considered as local
+    only. It should be at least equal to ProvisioningConfiguration#DEFAULT_TIMEOUT_MS */
+    @VisibleForTesting
+    public static final long WAIT_FOR_L3_PROVISIONING_TIMEOUT_MS = 18000;
 
     /** @see #isRecentlySelectedByTheUser */
     @VisibleForTesting
@@ -788,6 +799,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         mActivityManager = context.getSystemService(ActivityManager.class);
 
         mLastBssid = null;
+        mIpProvisioningTimedOut = false;
         mLastNetworkId = WifiConfiguration.INVALID_NETWORK_ID;
         mLastSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
         mLastSimBasedConnectionCarrierName = null;
@@ -2567,6 +2579,12 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         return mClientModeManager.getRole() == ROLE_CLIENT_LOCAL_ONLY;
     }
 
+    /** Check whether this connection is for local only network due to Ip Provisioning Timeout. */
+    @Override
+    public boolean isIpProvisioningTimedOut() {
+        return mIpProvisioningTimedOut;
+    }
+
     /**
      * Check if originaly requested as local only for ClientModeManager before fallback.
      * A secondary role could fallback to primary due to hardware support limit.
@@ -3462,6 +3480,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         clearLinkProperties();
 
         mLastBssid = null;
+        mIpProvisioningTimedOut = false;
         mLastLinkLayerStats = null;
         registerDisconnected();
         mLastNetworkId = WifiConfiguration.INVALID_NETWORK_ID;
@@ -3511,7 +3530,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         // Update link layer stats
         getWifiLinkLayerStats();
 
-        if (mWifiP2pConnection.isConnected()) {
+        if (mWifiP2pConnection.isConnected() && !mWifiP2pConnection.isP2pInWaitingState()) {
             // P2P discovery breaks DHCP, so shut it down in order to get through this.
             // Once P2P service receives this message and processes it accordingly, it is supposed
             // to send arg2 (i.e. CMD_PRE_DHCP_ACTION_COMPLETE) in a new Message.what back to
@@ -4237,6 +4256,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         mTargetBssid = SUPPLICANT_BSSID_ANY;
         mTargetNetworkId = WifiConfiguration.INVALID_NETWORK_ID;
         mLastBssid = null;
+        mIpProvisioningTimedOut = false;
         mLastNetworkId = WifiConfiguration.INVALID_NETWORK_ID;
         mLastSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
         mLastSimBasedConnectionCarrierName = null;
@@ -6868,6 +6888,17 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
     }
 
     class L3ProvisioningState extends RunnerState {
+
+        private void onL3ProvisioningTimeout() {
+            logi("l3Provisioning Timeout, Configuring the network as local-only");
+            mIpProvisioningTimedOut = true;
+            mWifiConnectivityManager.handleConnectionStateChanged(
+                    mClientModeManager,
+                    WifiConnectivityManager.WIFI_STATE_CONNECTED);
+            mWifiConfigManager.setIpProvisioningTimedOut(mLastNetworkId, true);
+            sendNetworkChangeBroadcast(DetailedState.CONNECTED);
+        };
+
         L3ProvisioningState(int threshold) {
             super(threshold, mWifiInjector.getWifiHandlerLocalLog());
         }
@@ -6875,10 +6906,18 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         @Override
         public void enterImpl() {
             startL3Provisioning();
+            if (mContext.getResources().getBoolean(
+                    R.bool.config_wifiRemainConnectedAfterIpProvisionTimeout)) {
+                sendMessageDelayed(obtainMessage(CMD_IP_PROVISIONING_TIMEOUT),
+                        WAIT_FOR_L3_PROVISIONING_TIMEOUT_MS);
+            }
         }
 
         @Override
         public void exitImpl() {
+            mIpProvisioningTimedOut = false;
+            removeMessages(CMD_IP_PROVISIONING_TIMEOUT);
+            mWifiConfigManager.setIpProvisioningTimedOut(mLastNetworkId, false);
         }
 
         @Override
@@ -6901,6 +6940,10 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
                             WifiLastResortWatchdog.FAILURE_CODE_DHCP,
                             isConnected());
                     handleStatus = NOT_HANDLED;
+                    break;
+                }
+                case CMD_IP_PROVISIONING_TIMEOUT: {
+                    onL3ProvisioningTimeout();
                     break;
                 }
                 default: {
@@ -8040,6 +8083,8 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
                 ? mLastL2KeyAndGroupHint.second : null;
         final Layer2Information layer2Info = new Layer2Information(l2Key, groupHint,
                 currentBssid);
+        final boolean mRemainConnectedAfterIpProvisionTimeout = mContext.getResources().getBoolean(
+                R.bool.config_wifiRemainConnectedAfterIpProvisionTimeout);
 
         if (isFilsConnection) {
             stopIpClient();
@@ -8054,7 +8099,8 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
                             .withPreconnection()
                             .withDisplayName(config.SSID)
                             .withLayer2Information(layer2Info)
-                            .withProvisioningTimeoutMs(PROVISIONING_TIMEOUT_FILS_CONNECTION_MS);
+                            .withProvisioningTimeoutMs(mRemainConnectedAfterIpProvisionTimeout ? 0 :
+                                    PROVISIONING_TIMEOUT_FILS_CONNECTION_MS);
             if (mContext.getResources().getBoolean(R.bool.config_wifiEnableApfOnNonPrimarySta)
                     || isPrimary()) {
                 // unclear if the native layer will return the correct non-capabilities if APF is
@@ -8126,6 +8172,9 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
                 prov.withRandomMacAddress();
             }
             prov.withDhcpOptions(convertToInternalDhcpOptions(options));
+            if (mRemainConnectedAfterIpProvisionTimeout) {
+                prov.withProvisioningTimeoutMs(0);
+            }
             mIpClient.startProvisioning(prov.build());
         }
 
