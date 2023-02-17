@@ -123,7 +123,7 @@ public class WifiNanIfaceHidlImpl implements IWifiNanIface {
      */
     public boolean enableAndConfigure(short transactionId, ConfigRequest configRequest,
             boolean notifyIdentityChange, boolean initialConfiguration, boolean rangingEnabled,
-            boolean isInstantCommunicationEnabled, int instantModeChannel,
+            boolean isInstantCommunicationEnabled, int instantModeChannel, int clusterId,
             int macAddressRandomizationIntervalSec, WifiNanIface.PowerParameters powerParameters) {
         final String methodStr = "enableAndConfigure";
         return validateAndCall(methodStr, false,
@@ -251,14 +251,19 @@ public class WifiNanIfaceHidlImpl implements IWifiNanIface {
     @Override
     public boolean respondToPairingRequest(short transactionId, int pairingId, boolean accept,
             byte[] pairingIdentityKey, boolean enablePairingCache, int requestType, byte[] pmk,
-            String password, int akm) {
+            String password, int akm, int cipherSuite) {
         return false;
     }
 
     @Override
     public boolean initiateNanPairingRequest(short transactionId, int peerId, MacAddress peer,
             byte[] pairingIdentityKey, boolean enablePairingCache, int requestType, byte[] pmk,
-            String password, int akm) {
+            String password, int akm, int cipherSuite) {
+        return false;
+    }
+
+    @Override
+    public boolean endPairing(short transactionId, int pairingId) {
         return false;
     }
 
@@ -274,6 +279,15 @@ public class WifiNanIfaceHidlImpl implements IWifiNanIface {
         return false;
     }
 
+    @Override
+    public boolean suspend(short transactionId, byte pubSubId) {
+        return false;
+    }
+
+    @Override
+    public boolean resume(short transactionId, byte pubSubId) {
+        return false;
+    }
 
     // Internal Implementations
 

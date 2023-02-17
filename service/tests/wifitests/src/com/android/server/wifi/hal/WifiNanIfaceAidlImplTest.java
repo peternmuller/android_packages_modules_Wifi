@@ -65,7 +65,7 @@ public class WifiNanIfaceAidlImplTest {
     public void setup() throws Exception {
         MockitoAnnotations.initMocks(this);
         mDut = new WifiNanIfaceAidlImpl(mIWifiNanIfaceMock);
-        TEST_CAPABILITIES.supportedCipherSuites = WIFI_AWARE_CIPHER_SUITE_NCS_SK_128
+        TEST_CAPABILITIES.supportedDataPathCipherSuites = WIFI_AWARE_CIPHER_SUITE_NCS_SK_128
                 | WIFI_AWARE_CIPHER_SUITE_NCS_SK_256;
     }
 
@@ -393,6 +393,21 @@ public class WifiNanIfaceAidlImplTest {
                 /* halCipherSuite */ 0);
     }
 
+    @Test
+    public void testSuspendRequest() throws Exception {
+        short tid = 250;
+        byte pid = 34;
+        mDut.suspend(tid, pid);
+        verify(mIWifiNanIfaceMock).suspendRequest(eq((char) tid), eq(pid));
+    }
+
+    @Test
+    public void testResumeRequest() throws Exception {
+        short tid = 251;
+        byte pid = 35;
+        mDut.resume(tid, pid);
+        verify(mIWifiNanIfaceMock).resumeRequest(eq((char) tid), eq(pid));
+    }
 
     // utilities
 
@@ -401,7 +416,7 @@ public class WifiNanIfaceAidlImplTest {
             boolean initialConfiguration, boolean isInteractive, boolean isIdle,
             int discoveryWindow24Ghz, int discoveryWindow5Ghz) throws RemoteException {
         mDut.enableAndConfigure(transactionId, configRequest, notifyIdentityChange,
-                initialConfiguration, false, false, 2437,
+                initialConfiguration, false, false, 2437, -1 /* clusterId */,
                 1800 /* PARAM_MAC_RANDOM_INTERVAL_SEC_DEFAULT */,
                 getPowerParams(isInteractive, isIdle, discoveryWindow24Ghz, discoveryWindow5Ghz));
 

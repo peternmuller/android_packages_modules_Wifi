@@ -348,18 +348,20 @@ public class WifiAwareNativeApi implements WifiAwareShellCommand.DelegatedShellC
      * @param rangingEnabled Indicates whether or not enable ranging.
      * @param isInstantCommunicationEnabled Indicates whether or not enable instant communication
      * @param instantModeChannel
+     * @param clusterId the id of the cluster to join.
      */
     public boolean enableAndConfigure(short transactionId, ConfigRequest configRequest,
             boolean notifyIdentityChange, boolean initialConfiguration, boolean isInteractive,
             boolean isIdle, boolean rangingEnabled, boolean isInstantCommunicationEnabled,
-            int instantModeChannel) {
+            int instantModeChannel, int clusterId) {
         Log.d(TAG, "enableAndConfigure: transactionId=" + transactionId + ", configRequest="
                 + configRequest + ", notifyIdentityChange=" + notifyIdentityChange
                 + ", initialConfiguration=" + initialConfiguration
                 + ", isInteractive=" + isInteractive + ", isIdle=" + isIdle
                 + ", isRangingEnabled=" + rangingEnabled
                 + ", isInstantCommunicationEnabled=" + isInstantCommunicationEnabled
-                + ", instantModeChannel=" + instantModeChannel);
+                + ", instantModeChannel=" + instantModeChannel
+                + ", clusterId=" + clusterId);
         recordTransactionId(transactionId);
 
         WifiNanIface iface = mHal.getWifiNanIface();
@@ -369,7 +371,7 @@ public class WifiAwareNativeApi implements WifiAwareShellCommand.DelegatedShellC
         }
         return iface.enableAndConfigure(transactionId, configRequest, notifyIdentityChange,
                 initialConfiguration, rangingEnabled,
-                isInstantCommunicationEnabled, instantModeChannel,
+                isInstantCommunicationEnabled, instantModeChannel, clusterId,
                 mExternalSetParams.getOrDefault(PARAM_MAC_RANDOM_INTERVAL_SEC,
                         mSettableParameters.get(PARAM_MAC_RANDOM_INTERVAL_SEC)),
                 getPowerParameters(isInteractive, isIdle));
@@ -679,21 +681,43 @@ public class WifiAwareNativeApi implements WifiAwareShellCommand.DelegatedShellC
     }
 
     /**
+     * Terminate an existing pairing setup
+     *
+     * @param transactionId Transaction ID for the transaction - used in the async callback to
+     *                      match with the original request.
+     * @param pairId The id of the pairing session
+     */
+    public boolean endPairing(short transactionId, int pairId) {
+        if (mVerboseLoggingEnabled) {
+            Log.v(TAG, "endPairing: transactionId=" + transactionId + ", ndpId=" + pairId);
+        }
+        recordTransactionId(transactionId);
+
+        WifiNanIface iface = mHal.getWifiNanIface();
+        if (iface == null) {
+            Log.e(TAG, "endDataPath: null interface");
+            return false;
+        }
+        return iface.endPairing(transactionId, pairId);
+    }
+
+    /**
      * Initiate a NAN pairing request for this publish/subscribe session
-     * @param transactionId Transaction ID for the transaction - used in the
-     *            async callback to match with the original request.
-     * @param peerId ID of the peer. Obtained through previous communication (a
-     *            match indication).
-     * @param password credential for the pairing setup
-     * @param requestType Setup or verification
+     *
+     * @param transactionId      Transaction ID for the transaction - used in the
+     *                           async callback to match with the original request.
+     * @param peerId             ID of the peer. Obtained through previous communication (a
+     *                           match indication).
      * @param pairingIdentityKey NAN identity key
-     * @param pmk credential for the pairing verification
-     * @param akm Key exchange method is used for pairing
+     * @param requestType        Setup or verification
+     * @param pmk                credential for the pairing verification
+     * @param password           credential for the pairing setup
+     * @param akm                Key exchange method is used for pairing
      * @return True is the request send succeed.
      */
     public boolean initiatePairing(short transactionId, int peerId, byte[] peer,
             byte[] pairingIdentityKey, boolean enablePairingCache, int requestType, byte[] pmk,
-            String password, int akm) {
+            String password, int akm, int cipherSuite) {
         if (mVerboseLoggingEnabled) {
             Log.v(TAG, "initiatePairing: transactionId=" + transactionId + ", peerId=" + peerId
                     + ", requestType=" + requestType + ", enablePairingCache=" + enablePairingCache
@@ -709,8 +733,8 @@ public class WifiAwareNativeApi implements WifiAwareShellCommand.DelegatedShellC
 
         try {
             MacAddress peerMac = MacAddress.fromBytes(peer);
-            return iface.initiatePairing(transactionId, peerId, peerMac,
-                    pairingIdentityKey, enablePairingCache, requestType, pmk, password, akm);
+            return iface.initiatePairing(transactionId, peerId, peerMac, pairingIdentityKey,
+                    enablePairingCache, requestType, pmk, password, akm, cipherSuite);
         } catch (IllegalArgumentException e) {
             Log.e(TAG, "Invalid peer mac received: " + Arrays.toString(peer));
             return false;
@@ -719,20 +743,21 @@ public class WifiAwareNativeApi implements WifiAwareShellCommand.DelegatedShellC
 
     /**
      * Response to a NAN pairing request for this from this session
-     * @param transactionId Transaction ID for the transaction - used in the
-     *            async callback to match with the original request.
-     * @param pairingId The id of the current pairing session
-     * @param accept True if accpect, false otherwise
-     * @param password credential for the pairing setup
-     * @param requestType Setup or verification
+     *
+     * @param transactionId      Transaction ID for the transaction - used in the
+     *                           async callback to match with the original request.
+     * @param pairingId          The id of the current pairing session
+     * @param accept             True if accpect, false otherwise
      * @param pairingIdentityKey NAN identity key
-     * @param pmk credential for the pairing verification
-     * @param akm Key exchange method is used for pairing
+     * @param requestType        Setup or verification
+     * @param pmk                credential for the pairing verification
+     * @param password           credential for the pairing setup
+     * @param akm                Key exchange method is used for pairing
      * @return True is the request send succeed.
      */
     public boolean respondToPairingRequest(short transactionId, int pairingId, boolean accept,
             byte[] pairingIdentityKey, boolean enablePairingCache, int requestType, byte[] pmk,
-            String password, int akm) {
+            String password, int akm, int cipherSuite) {
         if (mVerboseLoggingEnabled) {
             Log.v(TAG, "respondToDataPathRequest: transactionId=" + transactionId + ", accept="
                     + accept + ", int pairingId=" + pairingId
@@ -746,8 +771,8 @@ public class WifiAwareNativeApi implements WifiAwareShellCommand.DelegatedShellC
             Log.e(TAG, "respondToDataPathRequest: null interface");
             return false;
         }
-        return iface.respondToPairingRequest(transactionId, pairingId, accept,
-                pairingIdentityKey, enablePairingCache, requestType, pmk, password, akm);
+        return iface.respondToPairingRequest(transactionId, pairingId, accept, pairingIdentityKey,
+                enablePairingCache, requestType, pmk, password, akm, cipherSuite);
     }
 
     /**
@@ -804,6 +829,50 @@ public class WifiAwareNativeApi implements WifiAwareShellCommand.DelegatedShellC
         }
 
         return iface.respondToBootstrappingRequest(transactionId, bootstrappingId, accept);
+    }
+
+    /**
+     * Suspends the specified Aware session.
+     * @param transactionId transactionId Transaction ID for the transaction -
+     *            used in the async callback to match with the original request.
+     * @param pubSubId ID of the existing publish/subscribe session.
+     * @return True if the request is sent successfully.
+     */
+    public boolean suspendRequest(short transactionId, byte pubSubId) {
+        if (mVerboseLoggingEnabled) {
+            Log.v(TAG, "suspendRequest: transactionId=" + transactionId);
+        }
+        recordTransactionId(transactionId);
+
+        WifiNanIface iface = mHal.getWifiNanIface();
+        if (iface == null) {
+            Log.e(TAG, "suspendRequest: null interface");
+            return false;
+        }
+
+        return iface.suspendRequest(transactionId, pubSubId);
+    }
+
+    /**
+     * Resumes the specified (suspended) Aware session.
+     * @param transactionId transactionId Transaction ID for the transaction -
+     *            used in the async callback to match with the original request.
+     * @param pubSubId ID of the existing publish/subscribe session.
+     * @return True if the request is sent successfully.
+     */
+    public boolean resumeRequest(short transactionId, byte pubSubId) {
+        if (mVerboseLoggingEnabled) {
+            Log.v(TAG, "resumeRequest: transactionId=" + transactionId);
+        }
+        recordTransactionId(transactionId);
+
+        WifiNanIface iface = mHal.getWifiNanIface();
+        if (iface == null) {
+            Log.e(TAG, "resumeRequest: null interface");
+            return false;
+        }
+
+        return iface.resumeRequest(transactionId, pubSubId);
     }
 
     // utilities

@@ -76,13 +76,14 @@ public interface IWifiNanIface {
      * @param rangingEnabled Indicates whether to enable ranging.
      * @param isInstantCommunicationEnabled Indicates whether to enable instant communication
      * @param instantModeChannel
+     * @param clusterId Indicate which cluster to join.
      * @param macAddressRandomizationIntervalSec
      * @param powerParameters Instance of {@link WifiNanIface.PowerParameters} containing the
      *                        parameters to use in our config request.
      */
     boolean enableAndConfigure(short transactionId, ConfigRequest configRequest,
             boolean notifyIdentityChange, boolean initialConfiguration, boolean rangingEnabled,
-            boolean isInstantCommunicationEnabled, int instantModeChannel,
+            boolean isInstantCommunicationEnabled, int instantModeChannel, int clusterId,
             int macAddressRandomizationIntervalSec, WifiNanIface.PowerParameters powerParameters);
 
     /**
@@ -229,37 +230,48 @@ public interface IWifiNanIface {
 
     /**
      * Response to a NAN pairing request for this from this session
-     * @param transactionId Transaction ID for the transaction - used in the
-     *            async callback to match with the original request.
-     * @param pairingId The id of the current pairing session
-     * @param accept True if accpect, false otherwise
-     * @param password credential for the pairing setup
-     * @param requestType Setup or verification
+     *
+     * @param transactionId      Transaction ID for the transaction - used in the
+     *                           async callback to match with the original request.
+     * @param pairingId          The id of the current pairing session
+     * @param accept             True if accpect, false otherwise
      * @param pairingIdentityKey NAN identity key
-     * @param pmk credential for the pairing verification
-     * @param akm Key exchange method is used for pairing
+     * @param requestType        Setup or verification
+     * @param pmk                credential for the pairing verification
+     * @param password           credential for the pairing setup
+     * @param akm                Key exchange method is used for pairing
      * @return True if the request send succeed.
      */
     boolean respondToPairingRequest(short transactionId, int pairingId, boolean accept,
             byte[] pairingIdentityKey, boolean enablePairingCache, int requestType, byte[] pmk,
-            String password, int akm);
+            String password, int akm, int cipherSuite);
 
     /**
      * Initiate a NAN pairing request for this publish/subscribe session
-     * @param transactionId Transaction ID for the transaction - used in the
-     *            async callback to match with the original request.
-     * @param peerId ID of the peer. Obtained through previous communication (a
-     *            match indication).
-     * @param password credential for the pairing setup
-     * @param requestType Setup or verification
+     *
+     * @param transactionId      Transaction ID for the transaction - used in the
+     *                           async callback to match with the original request.
+     * @param peerId             ID of the peer. Obtained through previous communication (a
+     *                           match indication).
      * @param pairingIdentityKey NAN identity key
-     * @param pmk credential for the pairing verification
-     * @param akm Key exchange method is used for pairing
+     * @param requestType        Setup or verification
+     * @param pmk                credential for the pairing verification
+     * @param password           credential for the pairing setup
+     * @param akm                Key exchange method is used for pairing
      * @return True if the request send succeed.
      */
     boolean initiateNanPairingRequest(short transactionId, int peerId, MacAddress peer,
             byte[] pairingIdentityKey, boolean enablePairingCache, int requestType, byte[] pmk,
-            String password, int akm);
+            String password, int akm, int cipherSuite);
+
+    /**
+     * Terminate an existing pairing setup
+     *
+     * @param transactionId Transaction ID for the transaction - used in the async callback to
+     *                      match with the original request.
+     * @param pairingId The id of the pairing session
+     */
+    boolean endPairing(short transactionId, int pairingId);
 
     /**
      * Initiate a bootstrapping request for this publish/subscribe session
@@ -284,4 +296,22 @@ public interface IWifiNanIface {
      */
     boolean respondToNanBootstrappingRequest(short transactionId, int bootstrappingId,
             boolean accept);
+
+    /**
+     * Suspend the specified Aware session.
+     * @param transactionId Transaction ID for the transaction - used in the
+     *            async callback to match with the original request.
+     * @param pubSubId ID of the existing publish/subscribe session.
+     * @return True if the request sent successfully.
+     */
+    boolean suspend(short transactionId, byte pubSubId);
+
+    /**
+     * Resume the specified (suspended) Aware session.
+     * @param transactionId Transaction ID for the transaction - used in the
+     *            async callback to match with the original request.
+     * @param pubSubId ID of the existing publish/subscribe session.
+     * @return True if the request sent successfully.
+     */
+    boolean resume(short transactionId, byte pubSubId);
 }

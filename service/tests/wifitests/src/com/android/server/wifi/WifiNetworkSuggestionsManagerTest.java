@@ -3104,6 +3104,11 @@ public class WifiNetworkSuggestionsManagerTest extends WifiBaseTest {
                         TEST_PACKAGE_1, TEST_FEATURE));
         validateUserApprovalDialog(TEST_APP_NAME_1);
 
+        // As the dialog is active, notification will not be sent
+        mWifiNetworkSuggestionsManager.getNetworkSuggestionsForScanDetail(
+                createScanDetailForNetwork(networkSuggestion.wifiConfiguration));
+        verify(mWifiNotificationManager, never()).notify(anyInt(), any());
+
         // Simulate user dismissing the dialog via home/back button.
         ArgumentCaptor<WifiDialogManager.SimpleDialogCallback> dialogCallbackCaptor =
                 ArgumentCaptor.forClass(WifiDialogManager.SimpleDialogCallback.class);
@@ -4248,14 +4253,8 @@ public class WifiNetworkSuggestionsManagerTest extends WifiBaseTest {
                         .add(networkSuggestionList, TEST_UID_1, TEST_PACKAGE_1, TEST_FEATURE));
     }
 
-    /**
-     * Verify getAllScanOptimizationSuggestionNetworks will only return user approved,
-     * non-passpoint network.
-     */
-    @Test
-    public void testGetPnoAvailableSuggestions() {
+    private List<WifiNetworkSuggestion> setupAndGetPnoAvailableSuggestions() {
         WifiConfiguration network1 = WifiConfigurationTestUtil.createOpenNetwork();
-        WifiConfiguration network2 = WifiConfigurationTestUtil.createOpenNetwork();
         PasspointConfiguration passpointConfiguration =
                 createTestConfigWithUserCredential(TEST_FQDN, TEST_FRIENDLY_NAME);
         WifiConfiguration placeholderConfig = new WifiConfiguration();
@@ -4270,9 +4269,22 @@ public class WifiNetworkSuggestionsManagerTest extends WifiBaseTest {
                     add(networkSuggestion);
                     add(passpointSuggestion);
                 }};
+        when(mPasspointManager.addOrUpdateProvider(any(PasspointConfiguration.class),
+                anyInt(), anyString(), eq(true), eq(true), eq(false))).thenReturn(true);
         assertEquals(WifiManager.STATUS_NETWORK_SUGGESTIONS_SUCCESS,
                 mWifiNetworkSuggestionsManager
                         .add(networkSuggestionList, TEST_UID_1, TEST_PACKAGE_1, TEST_FEATURE));
+        return networkSuggestionList;
+    }
+
+    /**
+     * Verify getAllScanOptimizationSuggestionNetworks will only return user approved,
+     * non-passpoint network.
+     */
+    @Test
+    public void testGetPnoAvailableSuggestions() {
+        List<WifiNetworkSuggestion> suggestions = setupAndGetPnoAvailableSuggestions();
+        WifiConfiguration network1 = suggestions.get(0).wifiConfiguration;
         assertTrue(mWifiNetworkSuggestionsManager
                 .getAllScanOptimizationSuggestionNetworks().isEmpty());
         mWifiNetworkSuggestionsManager.setHasUserApprovedForApp(true, TEST_UID_1, TEST_PACKAGE_1);
@@ -4280,6 +4292,26 @@ public class WifiNetworkSuggestionsManagerTest extends WifiBaseTest {
                 mWifiNetworkSuggestionsManager.getAllScanOptimizationSuggestionNetworks();
         assertEquals(1, pnoNetwork.size());
         assertEquals(network1.SSID, pnoNetwork.get(0).SSID);
+    }
+
+    /**
+     * Verify that getAllPasspointScanOptimizationSuggestionNetworks will only return
+     * user-approved Passpoint networks if they have a recent SSID.
+     */
+    @Test
+    public void testGetPasspointPnoAvailableSuggestions() {
+        setupAndGetPnoAvailableSuggestions();
+        mWifiNetworkSuggestionsManager.setHasUserApprovedForApp(true, TEST_UID_1, TEST_PACKAGE_1);
+        assertTrue(mWifiNetworkSuggestionsManager
+                .getAllPasspointScanOptimizationSuggestionNetworks().isEmpty());
+
+        // Expect that the Passpoint network is returned if it has a recent SSID.
+        final String ssid = "my-passpoint-network";
+        when(mPasspointManager.getMostRecentSsidForProfile(any())).thenReturn(ssid);
+        List<WifiConfiguration> configs = mWifiNetworkSuggestionsManager
+                .getAllPasspointScanOptimizationSuggestionNetworks();
+        assertEquals(1, configs.size());
+        assertEquals(ssid, configs.get(0).SSID);
     }
 
     /**

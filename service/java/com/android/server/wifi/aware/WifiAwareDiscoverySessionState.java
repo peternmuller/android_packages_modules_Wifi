@@ -16,6 +16,8 @@
 
 package com.android.server.wifi.aware;
 
+import static android.net.wifi.aware.WifiAwareManager.WIFI_AWARE_SUSPEND_INTERNAL_ERROR;
+
 import static com.android.server.wifi.aware.WifiAwareStateManager.INSTANT_MODE_24GHZ;
 import static com.android.server.wifi.aware.WifiAwareStateManager.INSTANT_MODE_5GHZ;
 import static com.android.server.wifi.aware.WifiAwareStateManager.INSTANT_MODE_DISABLED;
@@ -27,6 +29,7 @@ import android.net.wifi.aware.AwarePairingConfig;
 import android.net.wifi.aware.IWifiAwareDiscoverySessionCallback;
 import android.net.wifi.aware.PublishConfig;
 import android.net.wifi.aware.SubscribeConfig;
+import android.net.wifi.aware.WifiAwareManager;
 import android.net.wifi.util.HexEncoding;
 import android.os.RemoteException;
 import android.os.SystemClock;
@@ -64,6 +67,8 @@ public class WifiAwareDiscoverySessionState {
     private int mInstantModeBand;
     private final LocalLog mLocalLog;
     private AwarePairingConfig mPairingConfig;
+    private boolean mIsSuspendable;
+    private boolean mIsSuspended;
 
     static class PeerInfo {
         PeerInfo(int instanceId, byte[] mac) {
@@ -87,7 +92,7 @@ public class WifiAwareDiscoverySessionState {
     public WifiAwareDiscoverySessionState(WifiAwareNativeApi wifiAwareNativeApi, int sessionId,
             byte pubSubId, IWifiAwareDiscoverySessionCallback callback, boolean isPublishSession,
             boolean isRangingEnabled, long creationTime, boolean instantModeEnabled,
-            int instantModeBand, LocalLog localLog,
+            int instantModeBand, boolean isSuspendable, LocalLog localLog,
             AwarePairingConfig pairingConfig) {
         mWifiAwareNativeApi = wifiAwareNativeApi;
         mSessionId = sessionId;
@@ -99,6 +104,7 @@ public class WifiAwareDiscoverySessionState {
         mUpdateTime = creationTime;
         mInstantModeEnabled = instantModeEnabled;
         mInstantModeBand = instantModeBand;
+        mIsSuspendable = isSuspendable;
         mLocalLog = localLog;
         mPairingConfig = pairingConfig;
     }
@@ -136,6 +142,14 @@ public class WifiAwareDiscoverySessionState {
 
     public void setInstantModeBand(int band) {
         mInstantModeBand = band;
+    }
+
+    public boolean isSuspendable() {
+        return mIsSuspendable;
+    }
+
+    public boolean isSessionSuspended() {
+        return mIsSuspended;
     }
 
     /**
@@ -315,6 +329,84 @@ public class WifiAwareDiscoverySessionState {
     }
 
     /**
+     * Request to suspend the current session.
+     *
+     * @param transactionId Transaction ID for the transaction - used in the async callback to match
+     *     with the original request.
+     */
+    public boolean suspend(short transactionId) {
+        if (!mWifiAwareNativeApi.suspendRequest(transactionId, mPubSubId)) {
+            onSuspendFail(WIFI_AWARE_SUSPEND_INTERNAL_ERROR);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Notifies that session suspension has succeeded and updates the session state.
+     */
+    public void onSuspendSuccess() {
+        mIsSuspended = true;
+        try {
+            mCallback.onSessionSuspendSucceeded();
+        } catch (RemoteException e) {
+            Log.e(TAG, "onSuspendSuccess: RemoteException=" + e);
+        }
+    }
+
+    /**
+     * Notify the session callback that suspension failed.
+     * @param reason an {@link WifiAwareManager.SessionSuspensionFailedReasonCode} indicating why
+     *               the session failed to be suspended.
+     */
+    public void onSuspendFail(@WifiAwareManager.SessionSuspensionFailedReasonCode int reason) {
+        try {
+            mCallback.onSessionSuspendFail(reason);
+        } catch (RemoteException e) {
+            Log.e(TAG, "onSuspendFail: RemoteException=" + e);
+        }
+    }
+
+    /**
+     * Request to resume the current (suspended) session.
+     *
+     * @param transactionId Transaction ID for the transaction - used in the async callback to match
+     *     with the original request.
+     */
+    public boolean resume(short transactionId) {
+        if (!mWifiAwareNativeApi.resumeRequest(transactionId, mPubSubId)) {
+            onResumeFail(WIFI_AWARE_SUSPEND_INTERNAL_ERROR);
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Notifies that has been resumed successfully and updates the session state.
+     */
+    public void onResumeSuccess() {
+        mIsSuspended = false;
+        try {
+            mCallback.onSessionResumeSucceeded();
+        } catch (RemoteException e) {
+            Log.e(TAG, "onResumeSuccess: RemoteException=" + e);
+        }
+    }
+
+    /**
+     * Notify the session callback that the resumption of the session failed.
+     * @param reason an {@link WifiAwareManager.SessionResumptionFailedReasonCode} indicating why
+     *               the session failed to be resumed.
+     */
+    public void onResumeFail(@WifiAwareManager.SessionResumptionFailedReasonCode int reason) {
+        try {
+            mCallback.onSessionResumeFail(reason);
+        } catch (RemoteException e) {
+            Log.e(TAG, "onResumeFail: RemoteException=" + e);
+        }
+    }
+
+    /**
      * Initiate a NAN pairing request for this publish/subscribe session
      * @param transactionId Transaction ID for the transaction - used in the
      *            async callback to match with the original request.
@@ -328,7 +420,8 @@ public class WifiAwareDiscoverySessionState {
      * @return True if the request send succeed.
      */
     public boolean initiatePairing(short transactionId,
-            int peerId, String password, int requestType, byte[] nik, byte[] pmk, int akm) {
+            int peerId, String password, int requestType, byte[] nik, byte[] pmk, int akm,
+            int cipherSuite) {
         PeerInfo peerInfo = mPeerInfoByRequestorInstanceId.get(peerId);
         if (peerInfo == null) {
             Log.e(TAG, "initiatePairing: attempting to send pairing request to an address which"
@@ -347,7 +440,7 @@ public class WifiAwareDiscoverySessionState {
         boolean success = mWifiAwareNativeApi.initiatePairing(transactionId,
                 peerInfo.mInstanceId, peerInfo.mMac, nik,
                 mPairingConfig != null && mPairingConfig.isPairingCacheEnabled(),
-                requestType, pmk, password, akm);
+                requestType, pmk, password, akm, cipherSuite);
         if (!success) {
             if (requestType == NAN_PAIRING_REQUEST_TYPE_VERIFICATION) {
                 return false;
@@ -379,7 +472,8 @@ public class WifiAwareDiscoverySessionState {
      * @return True if the request send succeed.
      */
     public boolean respondToPairingRequest(short transactionId, int peerId, int pairingId,
-            boolean accept, byte[] nik, int requestType, byte[] pmk, String password, int akm) {
+            boolean accept, byte[] nik, int requestType, byte[] pmk, String password, int akm,
+            int cipherSuite) {
         PeerInfo peerInfo = mPeerInfoByRequestorInstanceId.get(peerId);
         if (peerInfo == null) {
             Log.e(TAG, "respondToPairingRequest: attempting to response to message to an "
@@ -397,7 +491,7 @@ public class WifiAwareDiscoverySessionState {
 
         boolean success = mWifiAwareNativeApi.respondToPairingRequest(transactionId, pairingId,
                 accept, nik, mPairingConfig != null && mPairingConfig.isPairingCacheEnabled(),
-                requestType, pmk, password, akm);
+                requestType, pmk, password, akm, cipherSuite);
         if (!success) {
             if (requestType == NAN_PAIRING_REQUEST_TYPE_VERIFICATION) {
                 return false;

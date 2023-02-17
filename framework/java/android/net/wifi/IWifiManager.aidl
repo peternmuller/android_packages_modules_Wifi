@@ -28,13 +28,16 @@ import android.net.wifi.IActionListener;
 import android.net.wifi.IBooleanListener;
 import android.net.wifi.ICoexCallback;
 import android.net.wifi.IDppCallback;
+import android.net.wifi.IIntegerListener;
 import android.net.wifi.IInterfaceCreationInfoCallback;
 import android.net.wifi.ILastCallerListener;
 import android.net.wifi.IListListener;
 import android.net.wifi.ILocalOnlyHotspotCallback;
+import android.net.wifi.ILocalOnlyConnectionStatusListener;
 import android.net.wifi.INetworkRequestMatchCallback;
 import android.net.wifi.IOnWifiActivityEnergyInfoListener;
 import android.net.wifi.IOnWifiDriverCountryCodeChangedListener;
+import android.net.wifi.IWifiNetworkStateChangedListener;
 import android.net.wifi.IOnWifiUsabilityStatsListener;
 import android.net.wifi.IPnoScanResultsCallback;
 import android.net.wifi.IScanResultsCallback;
@@ -47,6 +50,7 @@ import android.net.wifi.ITrafficStateCallback;
 import android.net.wifi.IWifiConnectedNetworkScorer;
 import android.net.wifi.IWifiNetworkSelectionConfigListener;
 import android.net.wifi.IWifiVerboseLoggingStatusChangedListener;
+import android.net.wifi.QosPolicyParams;
 import android.net.wifi.ScanResult;
 import android.net.wifi.SoftApConfiguration;
 import android.net.wifi.WifiAvailableChannel;
@@ -164,6 +168,10 @@ interface IWifiManager
     void unregisterDriverCountryCodeChangedListener(
             in IOnWifiDriverCountryCodeChangedListener listener);
 
+    void addWifiNetworkStateChangedListener(in IWifiNetworkStateChangedListener listener);
+
+    void removeWifiNetworkStateChangedListener(in IWifiNetworkStateChangedListener listener);
+
     String getCountryCode(in String packageName, in String featureId);
 
     void setOverrideCountryCode(String country);
@@ -251,7 +259,17 @@ interface IWifiManager
 
     void enableTdls(String remoteIPAddress, boolean enable);
 
+    void enableTdlsWithRemoteIpAddress(String remoteIPAddress, boolean enable, in IBooleanListener listener);
+
     void enableTdlsWithMacAddress(String remoteMacAddress, boolean enable);
+
+    void enableTdlsWithRemoteMacAddress(String remoteMacAddress, boolean enable, in IBooleanListener listener);
+
+    void isTdlsOperationCurrentlyAvailable(in IBooleanListener listener);
+
+    void getMaxSupportedConcurrentTdlsSessions(in IIntegerListener callback);
+
+    void getNumberOfEnabledTdlsSessions(in IIntegerListener callback);
 
     String getCurrentNetworkWpsNfcConfigurationToken();
 
@@ -336,6 +354,10 @@ interface IWifiManager
 
     void unregisterSuggestionConnectionStatusListener(in ISuggestionConnectionStatusListener listener, String packageName);
 
+    void addLocalOnlyConnectionStatusListener(in ILocalOnlyConnectionStatusListener listener, String packageName, String featureId);
+
+    void removeLocalOnlyConnectionStatusListener(in ILocalOnlyConnectionStatusListener listener, String packageName);
+
     int calculateSignalLevel(int rssi);
 
     List<WifiConfiguration> getWifiConfigForMatchedNetworkSuggestionsSharedWithUser(in List<ScanResult> scanResults);
@@ -418,4 +440,18 @@ interface IWifiManager
     void reportCreateInterfaceImpact(String packageName, int interfaceType, boolean requireNewInterface, in IInterfaceCreationInfoCallback callback);
 
     int getMaxNumberOfChannelsPerRequest();
+
+    void addQosPolicies(in List<QosPolicyParams> policyParamsList, in IBinder binder, String packageName, in IListListener callback);
+
+    void removeQosPolicies(in int[] policyIdList, String packageName);
+
+    void removeAllQosPolicies(String packageName);
+
+    void setLinkLayerStatsPollingInterval(int intervalMs);
+
+    void getLinkLayerStatsPollingInterval(in IIntegerListener listener);
+
+    void setMloMode(int mode, in IBooleanListener listener);
+
+    void getMloMode(in IIntegerListener listener);
 }

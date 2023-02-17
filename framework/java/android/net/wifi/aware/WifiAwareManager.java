@@ -22,6 +22,7 @@ import static android.Manifest.permission.CHANGE_WIFI_STATE;
 import static android.Manifest.permission.NEARBY_WIFI_DEVICES;
 import static android.Manifest.permission.OVERRIDE_WIFI_CONFIG;
 
+import android.annotation.CallbackExecutor;
 import android.annotation.IntDef;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
@@ -32,8 +33,12 @@ import android.annotation.SystemApi;
 import android.annotation.SystemService;
 import android.content.Context;
 import android.net.ConnectivityManager;
+import android.net.MacAddress;
 import android.net.NetworkRequest;
 import android.net.NetworkSpecifier;
+import android.net.wifi.IBooleanListener;
+import android.net.wifi.IIntegerListener;
+import android.net.wifi.IListListener;
 import android.net.wifi.WifiManager;
 import android.net.wifi.util.HexEncoding;
 import android.os.Binder;
@@ -41,12 +46,12 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.Message;
 import android.os.RemoteException;
 import android.util.Log;
 
 import androidx.annotation.RequiresApi;
 
+import com.android.modules.utils.HandlerExecutor;
 import com.android.modules.utils.build.SdkLevel;
 
 import java.lang.annotation.Retention;
@@ -208,6 +213,79 @@ public class WifiAwareManager {
      * the peer is out of range or because the peer stopped advertising this service.
      */
     public static final int WIFI_AWARE_DISCOVERY_LOST_REASON_PEER_NOT_VISIBLE = 1;
+
+    /** @hide */
+    @IntDef({
+            WIFI_AWARE_SUSPEND_REDUNDANT_REQUEST,
+            WIFI_AWARE_SUSPEND_INVALID_SESSION,
+            WIFI_AWARE_SUSPEND_CANNOT_SUSPEND,
+            WIFI_AWARE_SUSPEND_INTERNAL_ERROR})
+    @Retention(RetentionPolicy.SOURCE)
+    public @interface SessionSuspensionFailedReasonCode {}
+
+    /**
+     * Reason code provided in {@link DiscoverySessionCallback#onSessionSuspendFailed(int)} when the
+     * session is already suspended.
+     * @hide
+     */
+    @SystemApi
+    public static final int WIFI_AWARE_SUSPEND_REDUNDANT_REQUEST = 0;
+
+    /**
+     * Reason code provided in {@link DiscoverySessionCallback#onSessionSuspendFailed(int)} when the
+     * specified session does not support suspension.
+      @hide
+     */
+    @SystemApi
+    public static final int WIFI_AWARE_SUSPEND_INVALID_SESSION = 1;
+
+    /**
+     * Reason code provided in {@link DiscoverySessionCallback#onSessionSuspendFailed(int)} when the
+     * session could not be suspended due to more than one app using it.
+      @hide
+     */
+    @SystemApi
+    public static final int WIFI_AWARE_SUSPEND_CANNOT_SUSPEND = 2;
+
+    /**
+     * Reason code provided in {@link DiscoverySessionCallback#onSessionSuspendFailed(int)} when an
+     * error is encountered with the request.
+      @hide
+     */
+    @SystemApi
+    public static final int WIFI_AWARE_SUSPEND_INTERNAL_ERROR = 3;
+
+    /** @hide */
+    @IntDef({
+            WIFI_AWARE_RESUME_REDUNDANT_REQUEST,
+            WIFI_AWARE_RESUME_INVALID_SESSION,
+            WIFI_AWARE_RESUME_INTERNAL_ERROR})
+    @Retention(RetentionPolicy.SOURCE)
+    public @interface SessionResumptionFailedReasonCode {}
+
+    /**
+     * Reason code provided in {@link DiscoverySessionCallback#onSessionResumeFailed(int)} when the
+     * session is not suspended.
+     * @hide
+     */
+    @SystemApi
+    public static final int WIFI_AWARE_RESUME_REDUNDANT_REQUEST = 0;
+
+    /**
+     * Reason code provided in {@link DiscoverySessionCallback#onSessionResumeFailed(int)} when the
+     * specified session does not support suspension.
+      @hide
+     */
+    @SystemApi
+    public static final int WIFI_AWARE_RESUME_INVALID_SESSION = 1;
+
+    /**
+     * Reason code provided in {@link DiscoverySessionCallback#onSessionResumeFailed(int)} when an
+     * error is encountered with the request.
+      @hide
+     */
+    @SystemApi
+    public static final int WIFI_AWARE_RESUME_INTERNAL_ERROR = 2;
 
     private final Context mContext;
     private final IWifiAwareManager mService;
@@ -378,7 +456,7 @@ public class WifiAwareManager {
             CHANGE_WIFI_STATE
     })
     public void attach(@NonNull AttachCallback attachCallback, @Nullable Handler handler) {
-        attach(handler, null, attachCallback, null);
+        attach(handler, null, attachCallback, null, false, null);
     }
 
     /**
@@ -414,7 +492,7 @@ public class WifiAwareManager {
      *
      * @param attachCallback A callback for attach events, extended from
      * {@link AttachCallback}.
-     * @param identityChangedListener A listener for changed identity, extended from
+     * @param identityChangedListener A callback for changed identity or cluster ID, extended from
      * {@link IdentityChangedListener}.
      * @param handler The Handler on whose thread to execute the callbacks of the {@code
      * attachCallback} and {@code identityChangedListener} objects. If a null is provided then the
@@ -428,17 +506,18 @@ public class WifiAwareManager {
     public void attach(@NonNull AttachCallback attachCallback,
             @NonNull IdentityChangedListener identityChangedListener,
             @Nullable Handler handler) {
-        attach(handler, null, attachCallback, identityChangedListener);
+        attach(handler, null, attachCallback, identityChangedListener, false, null);
     }
 
     /** @hide */
     public void attach(Handler handler, ConfigRequest configRequest,
             AttachCallback attachCallback,
-            IdentityChangedListener identityChangedListener) {
+            IdentityChangedListener identityChangedListener, boolean forOffloading,
+            Executor executor) {
         if (VDBG) {
             Log.v(TAG, "attach(): handler=" + handler + ", callback=" + attachCallback
                     + ", configRequest=" + configRequest + ", identityChangedListener="
-                    + identityChangedListener);
+                    + identityChangedListener + ", forOffloading" + forOffloading);
         }
 
         if (attachCallback == null) {
@@ -446,7 +525,11 @@ public class WifiAwareManager {
         }
 
         synchronized (mLock) {
-            Looper looper = (handler == null) ? Looper.getMainLooper() : handler.getLooper();
+            Executor localExecutor = executor;
+            if (localExecutor == null) {
+                localExecutor = new HandlerExecutor((handler == null)
+                        ? new Handler(Looper.getMainLooper()) : handler);
+            }
 
             try {
                 Binder binder = new Binder();
@@ -456,9 +539,9 @@ public class WifiAwareManager {
                             mContext.getAttributionSource());
                 }
                 mService.connect(binder, mContext.getOpPackageName(), mContext.getAttributionTag(),
-                        new WifiAwareEventCallbackProxy(this, looper, binder, attachCallback,
-                                identityChangedListener), configRequest,
-                        identityChangedListener != null, extras);
+                        new WifiAwareEventCallbackProxy(this, localExecutor, binder,
+                                attachCallback, identityChangedListener), configRequest,
+                        identityChangedListener != null, extras, forOffloading);
             } catch (RemoteException e) {
                 throw e.rethrowFromSystemServer();
             }
@@ -471,6 +554,37 @@ public class WifiAwareManager {
 
         try {
             mService.disconnect(clientId, binder);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /** @hide */
+    public void setMasterPreference(int clientId, Binder binder, int mp) {
+        if (VDBG) Log.v(TAG, "setMasterPreference()");
+
+        try {
+            mService.setMasterPreference(clientId, binder, mp);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
+     * @hide
+     */
+    public void getMasterPreference(int clientId, Binder binder, @NonNull Executor executor,
+            @NonNull Consumer<Integer> resultsCallback) {
+        Objects.requireNonNull(executor, "executor cannot be null");
+        Objects.requireNonNull(resultsCallback, "resultsCallback cannot be null");
+        try {
+            mService.getMasterPreference(clientId, binder,
+                    new IIntegerListener.Stub() {
+                        public void onResult(int value) {
+                            Binder.clearCallingIdentity();
+                            executor.execute(() -> resultsCallback.accept(value));
+                        }
+                    });
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }
@@ -597,7 +711,7 @@ public class WifiAwareManager {
      * @hide
      */
     public void initiateNanPairingSetupRequest(int clientId, int sessionId, PeerHandle peerHandle,
-            String password, String pairingDeviceAlias) {
+            String password, String pairingDeviceAlias, int cipherSuite) {
         if (peerHandle == null) {
             throw new IllegalArgumentException(
                     "initiateNanPairingRequest: invalid peerHandle - must be non-null");
@@ -608,7 +722,7 @@ public class WifiAwareManager {
         }
         try {
             mService.initiateNanPairingSetupRequest(clientId, sessionId, peerHandle.peerId,
-                    password, pairingDeviceAlias);
+                    password, pairingDeviceAlias, cipherSuite);
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }
@@ -618,7 +732,8 @@ public class WifiAwareManager {
      * @hide
      */
     public void responseNanPairingSetupRequest(int clientId, int sessionId, PeerHandle peerHandle,
-            int requestId, String password, String pairingDeviceAlias, boolean accept) {
+            int requestId, String password, String pairingDeviceAlias, boolean accept,
+            int cipherSuite) {
         if (peerHandle == null) {
             throw new IllegalArgumentException(
                     "initiateNanPairingRequest: invalid peerHandle - must be non-null");
@@ -629,7 +744,7 @@ public class WifiAwareManager {
         }
         try {
             mService.responseNanPairingSetupRequest(clientId, sessionId, peerHandle.peerId,
-                    requestId, password, pairingDeviceAlias, accept);
+                    requestId, password, pairingDeviceAlias, accept, cipherSuite);
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }
@@ -751,124 +866,119 @@ public class WifiAwareManager {
     }
 
     private static class WifiAwareEventCallbackProxy extends IWifiAwareEventCallback.Stub {
-        private static final int CALLBACK_CONNECT_SUCCESS = 0;
-        private static final int CALLBACK_CONNECT_FAIL = 1;
-        private static final int CALLBACK_IDENTITY_CHANGED = 2;
-        private static final int CALLBACK_ATTACH_TERMINATE = 3;
-
-        private final Handler mHandler;
         private final WeakReference<WifiAwareManager> mAwareManager;
         private final Binder mBinder;
-        private final Looper mLooper;
+        private final Executor mExecutor;
+
+        private final AttachCallback mAttachCallback;
+
+        private final IdentityChangedListener mIdentityChangedListener;
 
         /**
          * Constructs a {@link AttachCallback} using the specified looper.
          * All callbacks will delivered on the thread of the specified looper.
          *
-         * @param looper The looper on which to execute the callbacks.
+         * @param executor The executor to execute the callbacks.
          */
-        WifiAwareEventCallbackProxy(WifiAwareManager mgr, Looper looper, Binder binder,
+        WifiAwareEventCallbackProxy(WifiAwareManager mgr, Executor executor, Binder binder,
                 final AttachCallback attachCallback,
                 final IdentityChangedListener identityChangedListener) {
             mAwareManager = new WeakReference<>(mgr);
-            mLooper = looper;
+            mExecutor = executor;
             mBinder = binder;
-
-            if (VDBG) Log.v(TAG, "WifiAwareEventCallbackProxy ctor: looper=" + looper);
-            mHandler = new Handler(looper) {
-                @Override
-                public void handleMessage(Message msg) {
-                    if (DBG) {
-                        Log.d(TAG, "WifiAwareEventCallbackProxy: What=" + msg.what + ", msg="
-                                + msg);
-                    }
-
-                    WifiAwareManager mgr = mAwareManager.get();
-                    if (mgr == null) {
-                        Log.w(TAG, "WifiAwareEventCallbackProxy: handleMessage post GC");
-                        return;
-                    }
-
-                    switch (msg.what) {
-                        case CALLBACK_CONNECT_SUCCESS:
-                            attachCallback.onAttached(
-                                    new WifiAwareSession(mgr, mBinder, msg.arg1));
-                            break;
-                        case CALLBACK_CONNECT_FAIL:
-                            mAwareManager.clear();
-                            attachCallback.onAttachFailed();
-                            break;
-                        case CALLBACK_IDENTITY_CHANGED:
-                            if (identityChangedListener == null) {
-                                Log.e(TAG, "CALLBACK_IDENTITY_CHANGED: null listener.");
-                            } else {
-                                identityChangedListener.onIdentityChanged((byte[]) msg.obj);
-                            }
-                            break;
-                        case CALLBACK_ATTACH_TERMINATE:
-                            mAwareManager.clear();
-                            attachCallback.onAwareSessionTerminated();
-                    }
-                }
-            };
+            mAttachCallback = attachCallback;
+            mIdentityChangedListener = identityChangedListener;
         }
 
         @Override
         public void onConnectSuccess(int clientId) {
             if (VDBG) Log.v(TAG, "onConnectSuccess");
-
-            Message msg = mHandler.obtainMessage(CALLBACK_CONNECT_SUCCESS);
-            msg.arg1 = clientId;
-            mHandler.sendMessage(msg);
+            Binder.clearCallingIdentity();
+            mExecutor.execute(() -> {
+                WifiAwareManager mgr = mAwareManager.get();
+                if (mgr == null) {
+                    Log.w(TAG, "WifiAwareEventCallbackProxy: handleMessage post GC");
+                    return;
+                }
+                mAttachCallback.onAttached(new WifiAwareSession(mgr, mBinder, clientId));
+            });
         }
 
         @Override
         public void onConnectFail(int reason) {
             if (VDBG) Log.v(TAG, "onConnectFail: reason=" + reason);
-
-            Message msg = mHandler.obtainMessage(CALLBACK_CONNECT_FAIL);
-            msg.arg1 = reason;
-            mHandler.sendMessage(msg);
+            Binder.clearCallingIdentity();
+            mExecutor.execute(() -> {
+                WifiAwareManager mgr = mAwareManager.get();
+                if (mgr == null) {
+                    Log.w(TAG, "WifiAwareEventCallbackProxy: handleMessage post GC");
+                    return;
+                }
+                mAwareManager.clear();
+                mAttachCallback.onAttachFailed();
+            });
         }
 
         @Override
         public void onIdentityChanged(byte[] mac) {
             if (VDBG) Log.v(TAG, "onIdentityChanged: mac=" + new String(HexEncoding.encode(mac)));
-
-            Message msg = mHandler.obtainMessage(CALLBACK_IDENTITY_CHANGED);
-            msg.obj = mac;
-            mHandler.sendMessage(msg);
+            Binder.clearCallingIdentity();
+            mExecutor.execute(() -> {
+                WifiAwareManager mgr = mAwareManager.get();
+                if (mgr == null) {
+                    Log.w(TAG, "WifiAwareEventCallbackProxy: handleMessage post GC");
+                    return;
+                }
+                if (mIdentityChangedListener == null) {
+                    Log.e(TAG, "CALLBACK_IDENTITY_CHANGED: null listener.");
+                } else {
+                    mIdentityChangedListener.onIdentityChanged(mac);
+                }
+            });
         }
 
         @Override
         public void onAttachTerminate() {
             if (VDBG) Log.v(TAG, "onAwareSessionTerminated");
+            Binder.clearCallingIdentity();
+            mExecutor.execute(() -> {
+                WifiAwareManager mgr = mAwareManager.get();
+                if (mgr == null) {
+                    Log.w(TAG, "WifiAwareEventCallbackProxy: handleMessage post GC");
+                    return;
+                }
+                mAwareManager.clear();
+                mAttachCallback.onAwareSessionTerminated();
+            });
+        }
 
-            Message msg = mHandler.obtainMessage(CALLBACK_ATTACH_TERMINATE);
-            mHandler.sendMessage(msg);
+        @Override
+        public void onClusterIdChanged(
+                @IdentityChangedListener.ClusterChangeEvent int clusterEventType,
+                byte[] clusterId) {
+            Binder.clearCallingIdentity();
+            mExecutor.execute(() -> {
+                WifiAwareManager mgr = mAwareManager.get();
+                if (mgr == null) {
+                    Log.w(TAG, "WifiAwareEventCallbackProxy: handleMessage post GC");
+                    return;
+                }
+                if (mIdentityChangedListener == null) {
+                    Log.e(TAG, "CALLBACK_CLUSTER_ID_CHANGED: null listener.");
+                } else {
+                    try {
+                        mIdentityChangedListener.onClusterIdChanged(
+                                clusterEventType, MacAddress.fromBytes(clusterId));
+                    } catch (IllegalArgumentException iae) {
+                        Log.e(TAG, " Invalid MAC address, " + iae);
+                    }
+                }
+            });
         }
     }
 
     private static class WifiAwareDiscoverySessionCallbackProxy extends
             IWifiAwareDiscoverySessionCallback.Stub {
-        private static final int CALLBACK_SESSION_STARTED = 0;
-        private static final int CALLBACK_SESSION_CONFIG_SUCCESS = 1;
-        private static final int CALLBACK_SESSION_CONFIG_FAIL = 2;
-        private static final int CALLBACK_SESSION_TERMINATED = 3;
-        private static final int CALLBACK_MATCH = 4;
-        private static final int CALLBACK_MESSAGE_SEND_SUCCESS = 5;
-        private static final int CALLBACK_MESSAGE_SEND_FAIL = 6;
-        private static final int CALLBACK_MESSAGE_RECEIVED = 7;
-        private static final int CALLBACK_MATCH_WITH_DISTANCE = 8;
-        private static final int CALLBACK_MATCH_EXPIRED = 9;
-
-        private static final String MESSAGE_BUNDLE_KEY_MESSAGE = "message";
-        private static final String MESSAGE_BUNDLE_KEY_MESSAGE2 = "message2";
-        private static final String MESSAGE_BUNDLE_KEY_CIPHER_SUITE = "key_cipher_suite";
-        private static final String MESSAGE_BUNDLE_KEY_SCID = "key_scid";
-        private static final String MESSAGE_BUNDLE_KEY_PAIRING_ALIAS = "pairing_alias";
-        private static final String MESSAGE_BUNDLE_KEY_PAIRING_CONFIG = "pairing_config";
-
         private final WeakReference<WifiAwareManager> mAwareManager;
         private final boolean mIsPublish;
         private final DiscoverySessionCallback mOriginalCallback;
@@ -920,6 +1030,30 @@ public class WifiAwareManager {
         public void onSessionTerminated(int reason) {
             if (VDBG) Log.v(TAG, "onSessionTerminated: reason=" + reason);
             mHandler.post(() -> onProxySessionTerminated(reason));
+        }
+
+        @Override
+        public void onSessionSuspendSucceeded() {
+            if (VDBG) Log.v(TAG, "onSessionSuspendSucceeded");
+            mHandler.post(mOriginalCallback::onSessionSuspendSucceeded);
+        }
+
+        @Override
+        public void onSessionSuspendFail(int reason) {
+            if (VDBG) Log.v(TAG, "onSessionSuspendFail: reason=" + reason);
+            mHandler.post(() -> mOriginalCallback.onSessionSuspendFailed(reason));
+        }
+
+        @Override
+        public void onSessionResumeSucceeded() {
+            if (VDBG) Log.v(TAG, "onSessionResumeSucceeded");
+            mHandler.post(mOriginalCallback::onSessionResumeSucceeded);
+        }
+
+        @Override
+        public void onSessionResumeFail(int reason) {
+            if (VDBG) Log.v(TAG, "onSessionResumeFail: reason=" + reason);
+            mHandler.post(() -> mOriginalCallback.onSessionResumeFailed(reason));
         }
 
         @Override
@@ -1016,18 +1150,33 @@ public class WifiAwareManager {
         }
         @Override
         public void onPairingSetupConfirmed(int peerId, boolean accept, String alias) {
-            mHandler.post(() -> mOriginalCallback.onPairingSetupConfirmed(new PeerHandle(peerId),
-                            accept, alias));
+            if (accept) {
+                mHandler.post(() -> mOriginalCallback
+                        .onPairingSetupSucceeded(new PeerHandle(peerId), alias));
+            } else {
+                mHandler.post(() -> mOriginalCallback
+                        .onPairingSetupFailed(new PeerHandle(peerId)));
+            }
         }
         @Override
         public void onPairingVerificationConfirmed(int peerId, boolean accept, String alias) {
-            mHandler.post(() -> mOriginalCallback.onPairingVerificationConfirmed(
-                    new PeerHandle(peerId), accept, alias));
+            if (accept) {
+                mHandler.post(() -> mOriginalCallback.onPairingVerificationSucceed(
+                        new PeerHandle(peerId), alias));
+            } else {
+                mHandler.post(() -> mOriginalCallback
+                        .onPairingVerificationFailed(new PeerHandle(peerId)));
+            }
         }
         @Override
         public void onBootstrappingVerificationConfirmed(int peerId, boolean accept, int method) {
-            mHandler.post(() -> mOriginalCallback.onBootstrappingConfirmed(
-                    new PeerHandle(peerId), accept, method));
+            if (accept) {
+                mHandler.post(() -> mOriginalCallback.onBootstrappingSucceeded(
+                        new PeerHandle(peerId), accept, method));
+            } else {
+                mHandler.post(() -> mOriginalCallback.onBootstrappingFailed(
+                        new PeerHandle(peerId)));
+            }
         }
 
         /*
@@ -1092,9 +1241,55 @@ public class WifiAwareManager {
     }
 
     /**
+     *  Set all Wi-Fi Aware sessions created by the calling app to be opportunistic. Opportunistic
+     *  Wi-Fi Aware sessions are considered low priority and may be torn down (the sessions or the
+     *  Aware interface) if there are resource conflicts.
+     *
+     * @param enabled True to configure all Wi-Fi Aware sessions by the calling app as
+     *                Opportunistic. False by default.
+     */
+    @RequiresPermission(CHANGE_WIFI_STATE)
+    public void setOpportunisticModeEnabled(boolean enabled) {
+        try {
+            mService.setOpportunisticModeEnabled(mContext.getOpPackageName(), enabled);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
+     * Indicate whether all Wi-Fi Aware sessions created by the calling app are opportunistic as
+     * defined and configured by {@link #setOpportunisticModeEnabled(boolean)}
+     *
+     * @param executor The executor on which callback will be invoked.
+     * @param resultsCallback An asynchronous callback that will return boolean
+     */
+    @RequiresPermission(ACCESS_WIFI_STATE)
+    public void isOpportunisticModeEnabled(@NonNull @CallbackExecutor Executor executor,
+            @NonNull Consumer<Boolean> resultsCallback) {
+        Objects.requireNonNull(executor, "executor cannot be null");
+        Objects.requireNonNull(resultsCallback, "resultsCallback cannot be null");
+
+        try {
+            mService.isOpportunisticModeEnabled(mContext.getOpPackageName(),
+                    new IBooleanListener.Stub() {
+                        @Override
+                        public void onResult(boolean value) {
+                            Binder.clearCallingIdentity();
+                            executor.execute(() -> {
+                                resultsCallback.accept(value);
+                            });
+                        }
+                    });
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
      * Reset all paired devices setup by the caller by
-     * {@link DiscoverySession#initiatePairingRequest(PeerHandle, String, String)} and
-     * {@link DiscoverySession#respondToPairingRequest(int, PeerHandle, boolean, String, String)}
+     * {@link DiscoverySession#initiatePairingRequest(PeerHandle, String, int, String)} and
+     * {@link DiscoverySession#acceptPairingRequest(int, PeerHandle, String, int, String)}
      */
     @RequiresPermission(CHANGE_WIFI_STATE)
     public void resetPairedDevices() {
@@ -1107,8 +1302,8 @@ public class WifiAwareManager {
 
     /**
      * Remove the target paired device setup by the caller by
-     * {@link DiscoverySession#initiatePairingRequest(PeerHandle, String, String)} and
-     * {@link DiscoverySession#respondToPairingRequest(int, PeerHandle, boolean, String, String)}
+     * {@link DiscoverySession#initiatePairingRequest(PeerHandle, String, int, String)} and
+     * {@link DiscoverySession#acceptPairingRequest(int, PeerHandle, String, int, String)}
      * @param alias The alias set by the caller
      */
     @RequiresPermission(CHANGE_WIFI_STATE)
@@ -1127,15 +1322,15 @@ public class WifiAwareManager {
      *                        alias
      */
     @RequiresPermission(ACCESS_WIFI_STATE)
-    public void getPairedDevice(@NonNull Executor executor,
+    public void getPairedDevices(@NonNull Executor executor,
             @NonNull Consumer<List<String>> resultsCallback) {
         Objects.requireNonNull(executor, "executor cannot be null");
         Objects.requireNonNull(resultsCallback, "resultsCallback cannot be null");
         try {
             mService.getPairedDevices(
                     mContext.getOpPackageName(),
-                    new IWifiAwarePairedDevicesListener.Stub() {
-                        public void onResult(List<String> value) {
+                    new IListListener.Stub() {
+                        public void onResult(List value) {
                             Binder.clearCallingIdentity();
                             executor.execute(() -> resultsCallback.accept(value));
                         }
@@ -1143,6 +1338,50 @@ public class WifiAwareManager {
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }
+    }
+
+    /**
+     * @hide
+     */
+    public void suspend(int clientId, int sessionId) {
+        try {
+            mService.suspend(clientId, sessionId);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
+     * @hide
+     */
+    public void resume(int clientId, int sessionId) {
+        try {
+            mService.resume(clientId, sessionId);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+    /**
+     * Attach to the Wi-Fi Aware service as an offload session. All discovery sessions and
+     * connections will be handled via out-of-band connections.
+     * The Aware session created by this attach method will have the lowest priority when resource
+     * conflicts arise (e.g. Aware has to be torn down to create other WiFi interfaces).
+     *
+     * @param executor       The executor to execute the listener of the {@code attachCallback}
+     *                       object.
+     * @param attachCallback A callback for attach events, extended from
+     *                       {@link AttachCallback}.
+     * @hide
+     * @see #attach(AttachCallback, Handler)
+     */
+    @SystemApi
+    @RequiresPermission(allOf = {ACCESS_WIFI_STATE, CHANGE_WIFI_STATE, OVERRIDE_WIFI_CONFIG})
+    public void attachOffload(@NonNull @CallbackExecutor Executor executor,
+            @NonNull AttachCallback attachCallback) {
+        if (executor == null) {
+            throw new IllegalArgumentException("Null executor provided");
+        }
+        attach(null, null, attachCallback, null, true, executor);
     }
 
 }

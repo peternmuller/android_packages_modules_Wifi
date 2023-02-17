@@ -63,6 +63,7 @@ import android.os.RemoteException;
 import android.os.ServiceSpecificException;
 import android.util.Log;
 
+import com.android.modules.utils.build.SdkLevel;
 import com.android.server.wifi.aware.Capabilities;
 
 import java.nio.charset.StandardCharsets;
@@ -75,7 +76,7 @@ public class WifiNanIfaceAidlImpl implements IWifiNanIface {
     private android.hardware.wifi.IWifiNanIface mWifiNanIface;
     private String mIfaceName;
     private final Object mLock = new Object();
-    private WifiNanIfaceCallbackAidlImpl mHalCallback;
+    private final WifiNanIfaceCallbackAidlImpl mHalCallback;
     private WifiNanIface.Callback mFrameworkCallback;
 
     public WifiNanIfaceAidlImpl(@NonNull android.hardware.wifi.IWifiNanIface nanIface) {
@@ -149,8 +150,7 @@ public class WifiNanIfaceAidlImpl implements IWifiNanIface {
             if (!checkIfaceAndLogFailure(methodStr)) return null;
             if (mIfaceName != null) return mIfaceName;
             try {
-                String ifaceName = mWifiNanIface.getName();
-                mIfaceName = ifaceName;
+                mIfaceName = mWifiNanIface.getName();
                 return mIfaceName;
             } catch (RemoteException e) {
                 handleRemoteException(e, methodStr);
@@ -188,13 +188,13 @@ public class WifiNanIfaceAidlImpl implements IWifiNanIface {
     @Override
     public boolean enableAndConfigure(short transactionId, ConfigRequest configRequest,
             boolean notifyIdentityChange, boolean initialConfiguration, boolean rangingEnabled,
-            boolean isInstantCommunicationEnabled, int instantModeChannel,
+            boolean isInstantCommunicationEnabled, int instantModeChannel, int clusterId,
             int macAddressRandomizationIntervalSec, WifiNanIface.PowerParameters powerParameters) {
         final String methodStr = "enableAndConfigure";
         try {
             if (!checkIfaceAndLogFailure(methodStr)) return false;
             NanConfigRequestSupplemental supplemental = createNanConfigRequestSupplemental(
-                    rangingEnabled, isInstantCommunicationEnabled, instantModeChannel);
+                    rangingEnabled, isInstantCommunicationEnabled, instantModeChannel, clusterId);
             if (initialConfiguration) {
                 NanEnableRequest req = createNanEnableRequest(
                         configRequest, notifyIdentityChange, supplemental,
@@ -462,10 +462,11 @@ public class WifiNanIfaceAidlImpl implements IWifiNanIface {
     @Override
     public boolean respondToPairingRequest(short transactionId, int pairingId, boolean accept,
             byte[] pairingIdentityKey, boolean enablePairingCache, int requestType, byte[] pmk,
-            String password, int akm) {
+            String password, int akm, int cipherSuite) {
         String methodStr = "respondToPairingRequest";
         NanRespondToPairingIndicationRequest request = createNanPairingResponse(pairingId, accept,
-                pairingIdentityKey, enablePairingCache, requestType, pmk, password, akm);
+                pairingIdentityKey, enablePairingCache, requestType, pmk, password, akm,
+                cipherSuite);
         synchronized (mLock) {
             try {
                 if (!checkIfaceAndLogFailure(methodStr)) return false;
@@ -482,14 +483,31 @@ public class WifiNanIfaceAidlImpl implements IWifiNanIface {
     @Override
     public boolean initiateNanPairingRequest(short transactionId, int peerId, MacAddress peer,
             byte[] pairingIdentityKey, boolean enablePairingCache, int requestType, byte[] pmk,
-            String password, int akm) {
+            String password, int akm, int cipherSuite) {
         String methodStr = "initiateNanPairingRequest";
         NanPairingRequest nanPairingRequest = createNanPairingRequest(peerId, peer,
-                pairingIdentityKey, enablePairingCache, requestType, pmk, password, akm);
+                pairingIdentityKey, enablePairingCache, requestType, pmk, password, akm,
+                cipherSuite);
         synchronized (mLock) {
             try {
                 if (!checkIfaceAndLogFailure(methodStr)) return false;
                 mWifiNanIface.initiatePairingRequest((char) transactionId, nanPairingRequest);
+            } catch (RemoteException e) {
+                handleRemoteException(e, methodStr);
+            } catch (ServiceSpecificException e) {
+                handleServiceSpecificException(e, methodStr);
+            }
+            return false;
+        }
+    }
+
+    @Override
+    public boolean endPairing(short transactionId, int pairingId) {
+        String methodStr = "endPairing";
+        synchronized (mLock) {
+            try {
+                if (!checkIfaceAndLogFailure(methodStr)) return false;
+                mWifiNanIface.terminatePairingRequest((char) transactionId, pairingId);
             } catch (RemoteException e) {
                 handleRemoteException(e, methodStr);
             } catch (ServiceSpecificException e) {
@@ -536,6 +554,40 @@ public class WifiNanIfaceAidlImpl implements IWifiNanIface {
         }
     }
 
+    @Override
+    public boolean suspend(short transactionId, byte pubSubId) {
+        String methodStr = "suspend";
+        synchronized (mLock) {
+            try {
+                if (!checkIfaceAndLogFailure(methodStr)) return false;
+                mWifiNanIface.suspendRequest((char) transactionId, pubSubId);
+                return true;
+            } catch (RemoteException e) {
+                handleRemoteException(e, methodStr);
+            } catch (ServiceSpecificException e) {
+                handleServiceSpecificException(e, methodStr);
+            }
+            return false;
+        }
+    }
+
+    @Override
+    public boolean resume(short transactionId, byte pubSubId) {
+        String methodStr = "resume";
+        synchronized (mLock) {
+            try {
+                if (!checkIfaceAndLogFailure(methodStr)) return false;
+                mWifiNanIface.resumeRequest((char) transactionId, pubSubId);
+                return true;
+            } catch (RemoteException e) {
+                handleRemoteException(e, methodStr);
+            } catch (ServiceSpecificException e) {
+                handleServiceSpecificException(e, methodStr);
+            }
+            return false;
+        }
+    }
+
     // Utilities
 
     private static NanBootstrappingResponse createNanBootstrappingResponse(int bootstrappingId,
@@ -552,11 +604,13 @@ public class WifiNanIfaceAidlImpl implements IWifiNanIface {
         request.peerId = peerId;
         request.peerDiscMacAddr = peer.toByteArray();
         request.requestBootstrappingMethod = method;
+        request.cookie = new byte[0];
         return request;
     }
 
     private static NanConfigRequestSupplemental createNanConfigRequestSupplemental(
-            boolean rangingEnabled, boolean isInstantCommunicationEnabled, int instantModeChannel) {
+            boolean rangingEnabled, boolean isInstantCommunicationEnabled, int instantModeChannel,
+            int clusterId) {
         NanConfigRequestSupplemental out = new NanConfigRequestSupplemental();
         out.discoveryBeaconIntervalMs = 0;
         out.numberOfSpatialStreamsInDiscovery = 0;
@@ -564,6 +618,7 @@ public class WifiNanIfaceAidlImpl implements IWifiNanIface {
         out.enableRanging = rangingEnabled;
         out.enableInstantCommunicationMode = isInstantCommunicationEnabled;
         out.instantModeChannel = instantModeChannel;
+        out.clusterId = clusterId;
         return out;
     }
 
@@ -787,6 +842,9 @@ public class WifiNanIfaceAidlImpl implements IWifiNanIface {
             }
         }
 
+        req.baseConfigs.enableSessionSuspendability = SdkLevel.isAtLeastU()
+                && publishConfig.isSuspendable();
+
         req.publishType = publishConfig.mPublishType;
         req.txType = NanTxType.BROADCAST;
         req.pairingConfig = createAidlPairingConfig(publishConfig.getPairingConfig());
@@ -839,6 +897,9 @@ public class WifiNanIfaceAidlImpl implements IWifiNanIface {
         req.baseConfigs.securityConfig.pmk = new byte[32];
         req.baseConfigs.securityConfig.passphrase = new byte[0];
         req.baseConfigs.securityConfig.scid = new byte[16];
+
+        req.baseConfigs.enableSessionSuspendability = SdkLevel.isAtLeastU()
+                && subscribeConfig.isSuspendable();
 
         req.subscribeType = subscribeConfig.mSubscribeType;
         req.pairingConfig = createAidlPairingConfig(subscribeConfig.getPairingConfig());
@@ -915,7 +976,7 @@ public class WifiNanIfaceAidlImpl implements IWifiNanIface {
 
     private static NanPairingRequest createNanPairingRequest(int peerId, MacAddress peer,
             byte[] pairingIdentityKey, boolean enablePairingCache, int requestType, byte[] pmk,
-            String password, int akm) {
+            String password, int akm, int cipherSuite) {
         NanPairingRequest request = new NanPairingRequest();
         request.peerId = peerId;
         request.peerDiscMacAddr = peer.toByteArray();
@@ -926,6 +987,7 @@ public class WifiNanIfaceAidlImpl implements IWifiNanIface {
                 : NanPairingRequestType.NAN_PAIRING_VERIFICATION;
         request.securityConfig = new NanPairingSecurityConfig();
         request.securityConfig.pmk = new byte[32];
+        request.securityConfig.cipherType = cipherSuite;
         request.securityConfig.passphrase = new byte[0];
         if (pmk != null && pmk.length != 0) {
             request.securityConfig.securityType = NanPairingSecurityType.PMK;
@@ -945,7 +1007,8 @@ public class WifiNanIfaceAidlImpl implements IWifiNanIface {
 
     private static NanRespondToPairingIndicationRequest createNanPairingResponse(
             int pairingInstanceId, boolean accept, byte[] pairingIdentityKey,
-            boolean enablePairingCache, int requestType, byte[] pmk, String password, int akm) {
+            boolean enablePairingCache, int requestType, byte[] pmk, String password, int akm,
+            int cipherSuite) {
         NanRespondToPairingIndicationRequest request = new NanRespondToPairingIndicationRequest();
         request.pairingInstanceId = pairingInstanceId;
         request.acceptRequest = accept;
@@ -957,6 +1020,7 @@ public class WifiNanIfaceAidlImpl implements IWifiNanIface {
         request.securityConfig = new NanPairingSecurityConfig();
         request.securityConfig.pmk = new byte[32];
         request.securityConfig.passphrase = new byte[0];
+        request.securityConfig.cipherType = cipherSuite;
         if (pmk != null && pmk.length != 0) {
             request.securityConfig.securityType = NanPairingSecurityType.PMK;
             request.securityConfig.pmk = copyArray(pmk);
@@ -1016,9 +1080,9 @@ public class WifiNanIfaceAidlImpl implements IWifiNanIface {
             case WIFI_AWARE_CIPHER_SUITE_NCS_SK_256:
                 return NanCipherSuiteType.SHARED_KEY_256_MASK;
             case WIFI_AWARE_CIPHER_SUITE_NCS_PK_128:
-                return NanCipherSuiteType.PUBLIC_KEY_128_MASK;
+                return NanCipherSuiteType.PUBLIC_KEY_2WDH_256_MASK;
             case WIFI_AWARE_CIPHER_SUITE_NCS_PK_256:
-                return NanCipherSuiteType.PUBLIC_KEY_256_MASK;
+                return NanCipherSuiteType.PUBLIC_KEY_2WDH_256_MASK;
         }
         return NanCipherSuiteType.NONE;
     }

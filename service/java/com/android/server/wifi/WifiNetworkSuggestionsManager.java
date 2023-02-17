@@ -1589,6 +1589,36 @@ public class WifiNetworkSuggestionsManager {
         return networks;
     }
 
+    /**
+     * Get all user-approved Passpoint networks that include an SSID.
+     */
+    public List<WifiConfiguration> getAllPasspointScanOptimizationSuggestionNetworks() {
+        List<WifiConfiguration> networks = new ArrayList<>();
+        for (PerAppInfo info : mActiveNetworkSuggestionsPerApp.values()) {
+            if (!info.isApproved()) {
+                continue;
+            }
+            for (ExtendedWifiNetworkSuggestion ewns : info.extNetworkSuggestions.values()) {
+                if (ewns.wns.getPasspointConfig() == null) {
+                    continue;
+                }
+                WifiConfiguration network = mWifiConfigManager
+                        .getConfiguredNetwork(ewns.wns.getWifiConfiguration()
+                                .getProfileKey());
+                if (network == null) {
+                    network = ewns.createInternalWifiConfiguration(mWifiCarrierInfoManager);
+                }
+                network.SSID = mWifiInjector.getPasspointManager()
+                        .getMostRecentSsidForProfile(network.getPasspointUniqueId());
+                if (network.SSID == null) {
+                    continue;
+                }
+                networks.add(network);
+            }
+        }
+        return networks;
+    }
+
     private List<Integer> getAllMaxSizes() {
         return mActiveNetworkSuggestionsPerApp.values()
                 .stream()
@@ -1650,6 +1680,8 @@ public class WifiNetworkSuggestionsManager {
                     }
                 },
                 new WifiThreadRunner(mHandler)).launchDialog();
+        mNotificationUpdateTime = mClock.getElapsedSinceBootMillis()
+                + NOTIFICATION_UPDATE_DELAY_MILLS;
         mIsLastUserApprovalUiDialog = true;
     }
 

@@ -370,12 +370,12 @@ public class WifiNanIface implements WifiHal.WifiInterface {
      */
     public boolean enableAndConfigure(short transactionId, ConfigRequest configRequest,
             boolean notifyIdentityChange, boolean initialConfiguration, boolean rangingEnabled,
-            boolean isInstantCommunicationEnabled, int instantModeChannel,
+            boolean isInstantCommunicationEnabled, int instantModeChannel, int clusterId,
             int macAddressRandomizationIntervalSec, PowerParameters powerParameters) {
         return validateAndCall("enableAndConfigure", false,
                 () -> mWifiNanIface.enableAndConfigure(transactionId, configRequest,
                         notifyIdentityChange, initialConfiguration, rangingEnabled,
-                        isInstantCommunicationEnabled, instantModeChannel,
+                        isInstantCommunicationEnabled, instantModeChannel, clusterId,
                         macAddressRandomizationIntervalSec, powerParameters));
     }
 
@@ -484,25 +484,35 @@ public class WifiNanIface implements WifiHal.WifiInterface {
     }
 
     /**
-     * {@link IWifiNanIface#initiateNanPairingRequest(short, int, MacAddress, byte[], boolean, int, byte[], String, int)}
+     * {@link IWifiNanIface#initiateNanPairingRequest(short, int, MacAddress, byte[], boolean, int, byte[], String, int, int)}
      */
     public boolean initiatePairing(short transactionId, int peerId, MacAddress peer,
             byte[] pairingIdentityKey, boolean enablePairingCache, int requestType, byte[] pmk,
-            String password, int akm) {
+            String password, int akm, int cipherSuite) {
         return validateAndCall("initiatePairing", false,
                 () -> mWifiNanIface.initiateNanPairingRequest(transactionId, peerId, peer,
-                        pairingIdentityKey, enablePairingCache, requestType, pmk, password, akm));
+                        pairingIdentityKey, enablePairingCache, requestType, pmk, password, akm,
+                        cipherSuite));
     }
 
     /**
-     * {@link IWifiNanIface#respondToPairingRequest(short, int, boolean, byte[], boolean, int, byte[], String, int)}
+     * {@link IWifiNanIface#endPairing(short, int)}
+     */
+    public boolean endPairing(short transactionId, int pairingId) {
+        return validateAndCall("initiatePairing", false,
+                () -> mWifiNanIface.endPairing(transactionId, pairingId));
+    }
+
+    /**
+     * {@link IWifiNanIface#respondToPairingRequest(short, int, boolean, byte[], boolean, int, byte[], String, int, int)}
      */
     public boolean respondToPairingRequest(short transactionId, int pairingId, boolean accept,
             byte[] pairingIdentityKey, boolean enablePairingCache, int requestType, byte[] pmk,
-            String password, int akm) {
+            String password, int akm, int cipherSuite) {
         return validateAndCall("respondToPairingRequest", false,
                 () -> mWifiNanIface.respondToPairingRequest(transactionId, pairingId, accept,
-                        pairingIdentityKey, enablePairingCache, requestType, pmk, password, akm));
+                        pairingIdentityKey, enablePairingCache, requestType, pmk, password, akm,
+                        cipherSuite));
     }
     /**
      * {@link IWifiNanIface#initiateNanBootstrappingRequest(short, int, MacAddress, int)}
@@ -521,6 +531,22 @@ public class WifiNanIface implements WifiHal.WifiInterface {
         return validateAndCall("initiateBootstrapping", false,
                 () -> mWifiNanIface.respondToNanBootstrappingRequest(transactionId, bootstrappingId,
                         accept));
+    }
+
+    /**
+     * See comments for {@link IWifiNanIface#suspend(short, byte)}
+     */
+    public boolean suspendRequest(short transactionId, byte pubSubId) {
+        return validateAndCall("suspendRequest", false,
+            () -> mWifiNanIface.suspend(transactionId, pubSubId));
+    }
+
+    /**
+     * See comments for {@link IWifiNanIface#resume(short, byte)}
+     */
+    public boolean resumeRequest(short transactionId, byte pubSubId) {
+        return validateAndCall("resumeRequest", false,
+            () -> mWifiNanIface.resume(transactionId, pubSubId));
     }
 
     /**
@@ -644,6 +670,27 @@ public class WifiNanIface implements WifiHal.WifiInterface {
          * @param status Status the operation (see {@link NanStatusCode}).
          */
         void notifyRespondToBootstrappingIndicationResponse(short id, int status);
+
+        /**
+         * Invoked in response to a connection suspension request.
+         * @param id ID corresponding to the original request.
+         * @param status Status the operation (see {@link NanStatusCode}).
+         */
+        void notifySuspendResponse(short id, int status);
+
+        /**
+         * Invoked in response to a connection resume request.
+         * @param id ID corresponding to the original request.
+         * @param status Status the operation (see {@link NanStatusCode}).
+         */
+        void notifyResumeResponse(short id, int status);
+
+        /**
+         * Invoked in response to a pairing termination request.
+         * @param id ID corresponding to the original request.
+         * @param status Status the operation (see {@link NanStatusCode}).
+         */
+        void notifyTerminatePairingResponse(short id, int status);
 
         /**
          * Indicates that a cluster event has been received.
@@ -801,6 +848,7 @@ public class WifiNanIface implements WifiHal.WifiInterface {
         /**
          * Indicates that the bootstrapping is finished
          */
-        void eventBootstrappingConfirm(int pairingId, boolean accept, int reason);
+        void eventBootstrappingConfirm(int pairingId, int responseCode, int reason,
+                int comebackDelay, byte[] cookie);
     }
 }

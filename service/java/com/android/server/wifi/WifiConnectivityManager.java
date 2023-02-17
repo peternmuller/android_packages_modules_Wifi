@@ -49,6 +49,7 @@ import android.net.wifi.WifiScanner.ScanSettings;
 import android.net.wifi.WifiSsid;
 import android.net.wifi.hotspot2.PasspointConfiguration;
 import android.net.wifi.util.ScanResultUtil;
+import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.os.Process;
@@ -59,6 +60,8 @@ import android.util.ArrayMap;
 import android.util.ArraySet;
 import android.util.LocalLog;
 import android.util.Log;
+
+import androidx.annotation.RequiresApi;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.modules.utils.build.SdkLevel;
@@ -568,7 +571,7 @@ public class WifiConnectivityManager {
                 mWifiBlocklistMonitor.tryEnablingBlockedBssids(scanDetails);
         for (ScanDetail scanDetail : enabledDetails) {
             WifiConfiguration config = mConfigManager.getSavedNetworkForScanDetail(scanDetail);
-            if (config != null) {
+            if (config != null && config.getNetworkSelectionStatus().isNetworkTemporaryDisabled()) {
                 mConfigManager.updateNetworkSelectionStatus(config.networkId,
                         WifiConfiguration.NetworkSelectionStatus.DISABLED_NONE);
             }
@@ -2136,6 +2139,7 @@ public class WifiConnectivityManager {
     /**
      * Configures network selection parameters..
      */
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     public void setNetworkSelectionConfig(@NonNull WifiNetworkSelectionConfig nsConfig) {
         mNetworkSelector.setAssociatedNetworkSelectionOverride(
                 nsConfig.getAssociatedNetworkSelectionOverride());
@@ -2152,6 +2156,8 @@ public class WifiConnectivityManager {
                 nsConfig.getRssiThresholds(ScanResult.WIFI_BAND_5_GHZ));
         mScoringParams.setRssi6Thresholds(
                 nsConfig.getRssiThresholds(ScanResult.WIFI_BAND_6_GHZ));
+        mScoringParams.setFrequencyWeights(
+                nsConfig.getFrequencyWeights());
     }
 
     /**
@@ -2230,6 +2236,10 @@ public class WifiConnectivityManager {
         pnoSettings.min5GHzRssi = mScoringParams.getEntryRssi(ScanResult.BAND_5_GHZ_START_FREQ_MHZ);
         pnoSettings.min24GHzRssi = mScoringParams.getEntryRssi(
                 ScanResult.BAND_24_GHZ_START_FREQ_MHZ);
+        pnoSettings.scanIterations = mContext.getResources()
+                .getInteger(R.integer.config_wifiPnoScanIterations);
+        pnoSettings.scanIntervalMultiplier = mContext.getResources()
+                .getInteger(R.integer.config_wifiPnoScanIntervalMultiplier);
 
         // Initialize scan settings
         ScanSettings scanSettings = new ScanSettings();
@@ -2247,6 +2257,11 @@ public class WifiConnectivityManager {
     private @NonNull List<WifiConfiguration> getAllScanOptimizationNetworks() {
         List<WifiConfiguration> networks = mConfigManager.getSavedNetworks(-1);
         networks.addAll(mWifiNetworkSuggestionsManager.getAllScanOptimizationSuggestionNetworks());
+        if (mDeviceConfigFacade.includePasspointSsidsInPnoScans()) {
+            networks.addAll(mPasspointManager.getWifiConfigsForPasspointProfilesWithSsids());
+            networks.addAll(mWifiNetworkSuggestionsManager
+                    .getAllPasspointScanOptimizationSuggestionNetworks());
+        }
         // remove all saved but never connected, auto-join disabled, or network selection disabled
         // networks.
         networks.removeIf(config -> !config.allowAutojoin
@@ -2867,8 +2882,11 @@ public class WifiConnectivityManager {
                         // filter out candidates that are disabled.
                         WifiConfiguration config =
                                 mConfigManager.getConfiguredNetwork(candidate.getNetworkConfigId());
-                        return config != null
-                                && config.getNetworkSelectionStatus().isNetworkEnabled()
+                        if (config == null || mConfigManager.isNetworkTemporarilyDisabledByUser(
+                                config.isPasspoint() ? config.FQDN : config.SSID)) {
+                            return false;
+                        }
+                        return config.getNetworkSelectionStatus().isNetworkEnabled()
                                 && config.allowAutojoin;
                     })
                     .collect(Collectors.toList());
@@ -3044,8 +3062,11 @@ public class WifiConnectivityManager {
      */
     private void retrieveWifiScanner() {
         if (mScanner != null) return;
-        mScanner = Objects.requireNonNull(WifiLocalServices.getService(WifiScannerInternal.class),
-                "Got a null instance of WifiScanner!");
+        mScanner = WifiLocalServices.getService(WifiScannerInternal.class);
+        if (mScanner == null) {
+            Log.wtf(TAG, "Got a null instance of WifiScanner!");
+            return;
+        }
         // Register for all single scan results
         mScanner.registerScanListener(mInternalAllSingleScanListener);
     }

@@ -23,6 +23,7 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.hardware.wifi.WifiStatusCode;
 import android.net.MacAddress;
 import android.net.apf.ApfCapabilities;
 import android.net.wifi.ScanResult;
@@ -1837,6 +1838,30 @@ public class WifiVendorHal {
         synchronized (sLock) {
             if (mWifiChip == null) return null;
             return mWifiChip.getUsableChannels(band, mode, filter);
+        }
+    }
+
+    /**
+     * Set DTIM multiplier used when the system is in the suspended mode.
+     */
+    public boolean setDtimMultiplier(@NonNull String ifaceName, int multiplier) {
+        synchronized (sLock) {
+            WifiStaIface iface = getStaIface(ifaceName);
+            if (iface == null) return false;
+            return iface.setDtimMultiplier(multiplier);
+        }
+    }
+
+    /**
+     * Set the Multi-Link Operation mode.
+     *
+     * @param mode Multi-Link operation mode {@link android.net.wifi.WifiManager.MloMode}.
+     * @return {@code true} if success, otherwise {@code false}.
+     */
+    public @WifiStatusCode int setMloMode(@WifiManager.MloMode int mode) {
+        synchronized (sLock) {
+            if (mWifiChip == null) return WifiStatusCode.ERROR_WIFI_CHIP_INVALID;
+            return mWifiChip.setMloMode(mode);
         }
     }
 }

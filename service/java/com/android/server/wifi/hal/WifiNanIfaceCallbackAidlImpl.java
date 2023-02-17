@@ -16,6 +16,9 @@
 
 package com.android.server.wifi.hal;
 
+import static com.android.server.wifi.aware.WifiAwareStateManager.NAN_BOOTSTRAPPING_ACCEPT;
+import static com.android.server.wifi.aware.WifiAwareStateManager.NAN_BOOTSTRAPPING_COMEBACK;
+import static com.android.server.wifi.aware.WifiAwareStateManager.NAN_BOOTSTRAPPING_REJECT;
 import static com.android.server.wifi.aware.WifiAwareStateManager.NAN_PAIRING_AKM_PASN;
 import static com.android.server.wifi.aware.WifiAwareStateManager.NAN_PAIRING_AKM_SAE;
 import static com.android.server.wifi.aware.WifiAwareStateManager.NAN_PAIRING_REQUEST_TYPE_SETUP;
@@ -25,6 +28,7 @@ import android.hardware.wifi.IWifiNanIfaceEventCallback;
 import android.hardware.wifi.NanBootstrappingConfirmInd;
 import android.hardware.wifi.NanBootstrappingMethod;
 import android.hardware.wifi.NanBootstrappingRequestInd;
+import android.hardware.wifi.NanBootstrappingResponseCode;
 import android.hardware.wifi.NanCapabilities;
 import android.hardware.wifi.NanCipherSuiteType;
 import android.hardware.wifi.NanClusterEventInd;
@@ -41,6 +45,7 @@ import android.hardware.wifi.NanPairingRequestInd;
 import android.hardware.wifi.NanPairingRequestType;
 import android.hardware.wifi.NanStatus;
 import android.hardware.wifi.NanStatusCode;
+import android.hardware.wifi.NanSuspensionModeChangeInd;
 import android.hardware.wifi.NpkSecurityAssociation;
 import android.hardware.wifi.WifiChannelWidthInMhz;
 import android.net.MacAddress;
@@ -69,7 +74,7 @@ public class WifiNanIfaceCallbackAidlImpl extends IWifiNanIfaceEventCallback.Stu
     private static final String TAG = "WifiNanIfaceCallbackAidlImpl";
 
     private boolean mVerboseLoggingEnabled;
-    private WifiNanIfaceAidlImpl mWifiNanIface;
+    private final WifiNanIfaceAidlImpl mWifiNanIface;
 
     public WifiNanIfaceCallbackAidlImpl(WifiNanIfaceAidlImpl wifiNanIface) {
         mWifiNanIface = wifiNanIface;
@@ -297,6 +302,17 @@ public class WifiNanIfaceCallbackAidlImpl extends IWifiNanIfaceEventCallback.Stu
     }
 
     @Override
+    public void notifyTerminatePairingResponse(char id, NanStatus status) {
+        if (!checkFrameworkCallback()) return;
+        if (mVerboseLoggingEnabled) {
+            Log.v(TAG, "notifyTerminatePairingResponse: id=" + id
+                    + ", status=" + statusString(status));
+        }
+        mWifiNanIface.getFrameworkCallback().notifyRespondToBootstrappingIndicationResponse(
+                (short) id, WifiNanIface.NanStatusCode.fromAidl(status.status));
+    }
+
+    @Override
     public void notifyTerminateDataPathResponse(char id, NanStatus status) {
         if (!checkFrameworkCallback()) return;
         if (mVerboseLoggingEnabled) {
@@ -304,6 +320,32 @@ public class WifiNanIfaceCallbackAidlImpl extends IWifiNanIfaceEventCallback.Stu
                     + statusString(status));
         }
         mWifiNanIface.getFrameworkCallback().notifyTerminateDataPathResponse(
+                (short) id, WifiNanIface.NanStatusCode.fromAidl(status.status));
+    }
+
+    @Override
+    public void notifySuspendResponse(char id, NanStatus status) {
+        if (!checkFrameworkCallback()) {
+            return;
+        }
+        if (mVerboseLoggingEnabled) {
+            Log.v(TAG, "notifySuspendResponse: id=" + id + ", status="
+                    + statusString(status));
+        }
+        mWifiNanIface.getFrameworkCallback().notifySuspendResponse(
+                (short) id, WifiNanIface.NanStatusCode.fromAidl(status.status));
+    }
+
+    @Override
+    public void notifyResumeResponse(char id, NanStatus status) {
+        if (!checkFrameworkCallback()) {
+            return;
+        }
+        if (mVerboseLoggingEnabled) {
+            Log.v(TAG, "notifyResumeResponse: id=" + id + ", status="
+                    + statusString(status));
+        }
+        mWifiNanIface.getFrameworkCallback().notifyResumeResponse(
                 (short) id, WifiNanIface.NanStatusCode.fromAidl(status.status));
     }
 
@@ -368,7 +410,7 @@ public class WifiNanIfaceCallbackAidlImpl extends IWifiNanIfaceEventCallback.Stu
                 event.addr, event.serviceSpecificInfo, event.matchFilter,
                 NanRangingIndication.fromAidl(event.rangingIndicationType),
                 event.rangingMeasurementInMm, event.scid,
-                toPublicCipherSuites(event.peerCipherType),
+                toPublicDataPathCipherSuites(event.peerCipherType),
                 event.peerNira.nonce, event.peerNira.tag,
                 createPublicPairingConfig(event.peerPairingConfig));
     }
@@ -446,6 +488,11 @@ public class WifiNanIfaceCallbackAidlImpl extends IWifiNanIfaceEventCallback.Stu
         }
         mWifiNanIface.getFrameworkCallback().eventTransmitFollowup(
                 (short) id, WifiNanIface.NanStatusCode.fromAidl(status.status));
+    }
+
+    @Override
+    public void eventSuspensionModeChanged(NanSuspensionModeChangeInd event) {
+        if (!checkFrameworkCallback()) return;
     }
 
     @Override
@@ -540,8 +587,8 @@ public class WifiNanIfaceCallbackAidlImpl extends IWifiNanIfaceEventCallback.Stu
     private static PairingSecurityAssociationInfo createPairingSecurityAssociationInfo(
             NpkSecurityAssociation npksa) {
         return new PairingSecurityAssociationInfo(npksa.peerNanIdentityKey,
-                npksa.localNanIdentityKey,
-                npksa.npk, createPublicPairingAkm(npksa.akm));
+                npksa.localNanIdentityKey, npksa.npk,
+                createPublicPairingAkm(npksa.akm), toPublicDataPathCipherSuites(npksa.cipherType));
     }
 
     private static int createPublicPairingAkm(int aidlAkm) {
@@ -573,8 +620,23 @@ public class WifiNanIfaceCallbackAidlImpl extends IWifiNanIfaceEventCallback.Stu
             Log.v(TAG, "eventBootstrappingConfirm:");
         }
         mWifiNanIface.getFrameworkCallback().eventBootstrappingConfirm(
-                event.bootstrappingInstanceId, event.acceptRequest,
-                WifiNanIface.NanStatusCode.fromAidl(event.reasonCode.status));
+                event.bootstrappingInstanceId,
+                convertAidlBootstrappingResponseCodeToFramework(event.responseCode),
+                WifiNanIface.NanStatusCode.fromAidl(event.reasonCode.status), event.comeBackDelay,
+                event.cookie);
+    }
+
+    private int convertAidlBootstrappingResponseCodeToFramework(int aidlCode) {
+        switch (aidlCode) {
+            case NanBootstrappingResponseCode.NAN_BOOTSTRAPPING_REQUEST_ACCEPT:
+                return NAN_BOOTSTRAPPING_ACCEPT;
+            case NanBootstrappingResponseCode.NAN_BOOTSTRAPPING_REQUEST_REJECT:
+                return NAN_BOOTSTRAPPING_REJECT;
+            case NanBootstrappingResponseCode.NAN_BOOTSTRAPPING_REQUEST_COMEBACK:
+                return NAN_BOOTSTRAPPING_COMEBACK;
+        }
+        Log.e(TAG, "unknown bootstrapping response code");
+        return aidlCode;
     }
 
     @Override
@@ -606,16 +668,20 @@ public class WifiNanIfaceCallbackAidlImpl extends IWifiNanIfaceEventCallback.Stu
                 capabilities.maxQueuedTransmitFollowupMsgs;
         frameworkCapabilities.maxSubscribeInterfaceAddresses =
                 capabilities.maxSubscribeInterfaceAddresses;
-        frameworkCapabilities.supportedCipherSuites = toPublicCipherSuites(
+        frameworkCapabilities.supportedDataPathCipherSuites = toPublicDataPathCipherSuites(
+                capabilities.supportedCipherSuites);
+        frameworkCapabilities.supportedPairingCipherSuites = toPublicPairingCipherSuites(
                 capabilities.supportedCipherSuites);
         frameworkCapabilities.isInstantCommunicationModeSupported =
                 capabilities.instantCommunicationModeSupportFlag;
         frameworkCapabilities.isNanPairingSupported = capabilities.supportsPairing;
+        frameworkCapabilities.isSetClusterIdSupported = capabilities.supportsSetClusterId;
+        frameworkCapabilities.isSuspensionSupported = capabilities.supportsSuspension;
 
         return frameworkCapabilities;
     }
 
-    private int toPublicCipherSuites(int nativeCipherSuites) {
+    private static int toPublicDataPathCipherSuites(int nativeCipherSuites) {
         int publicCipherSuites = 0;
 
         if ((nativeCipherSuites & NanCipherSuiteType.SHARED_KEY_128_MASK) != 0) {
@@ -624,11 +690,24 @@ public class WifiNanIfaceCallbackAidlImpl extends IWifiNanIfaceEventCallback.Stu
         if ((nativeCipherSuites & NanCipherSuiteType.SHARED_KEY_256_MASK) != 0) {
             publicCipherSuites |= Characteristics.WIFI_AWARE_CIPHER_SUITE_NCS_SK_256;
         }
-        if ((nativeCipherSuites & NanCipherSuiteType.PUBLIC_KEY_128_MASK) != 0) {
+        if ((nativeCipherSuites & NanCipherSuiteType.PUBLIC_KEY_2WDH_256_MASK) != 0) {
             publicCipherSuites |= Characteristics.WIFI_AWARE_CIPHER_SUITE_NCS_PK_128;
         }
-        if ((nativeCipherSuites & NanCipherSuiteType.PUBLIC_KEY_256_MASK) != 0) {
+        if ((nativeCipherSuites & NanCipherSuiteType.PUBLIC_KEY_2WDH_256_MASK) != 0) {
             publicCipherSuites |= Characteristics.WIFI_AWARE_CIPHER_SUITE_NCS_PK_256;
+        }
+
+        return publicCipherSuites;
+    }
+
+    private static int toPublicPairingCipherSuites(int nativeCipherSuites) {
+        int publicCipherSuites = 0;
+
+        if ((nativeCipherSuites & NanCipherSuiteType.PUBLIC_KEY_PASN_128_MASK) != 0) {
+            publicCipherSuites |= Characteristics.WIFI_AWARE_CIPHER_SUITE_NCS_PK_PASN_128;
+        }
+        if ((nativeCipherSuites & NanCipherSuiteType.PUBLIC_KEY_PASN_256_MASK) != 0) {
+            publicCipherSuites |= Characteristics.WIFI_AWARE_CIPHER_SUITE_NCS_PK_PASN_256;
         }
 
         return publicCipherSuites;
@@ -646,8 +725,9 @@ public class WifiNanIfaceCallbackAidlImpl extends IWifiNanIfaceEventCallback.Stu
     /**
      * Convert HAL channelBandwidth to framework enum
      */
-    private @WifiAnnotations.ChannelWidth int getChannelBandwidthFromHal(int channelBandwidth) {
-        switch(channelBandwidth) {
+    @WifiAnnotations.ChannelWidth
+    private int getChannelBandwidthFromHal(int channelBandwidth) {
+        switch (channelBandwidth) {
             case WifiChannelWidthInMhz.WIDTH_40:
                 return ScanResult.CHANNEL_WIDTH_40MHZ;
             case WifiChannelWidthInMhz.WIDTH_80:

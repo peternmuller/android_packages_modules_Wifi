@@ -31,6 +31,7 @@ import static android.net.wifi.WifiManager.WIFI_FEATURE_WPA3_SUITE_B;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -83,6 +84,7 @@ import android.hardware.wifi.supplicant.QosPolicyClassifierParams;
 import android.hardware.wifi.supplicant.QosPolicyClassifierParamsMask;
 import android.hardware.wifi.supplicant.QosPolicyData;
 import android.hardware.wifi.supplicant.QosPolicyRequestType;
+import android.hardware.wifi.supplicant.QosPolicyScsData;
 import android.hardware.wifi.supplicant.QosPolicyStatus;
 import android.hardware.wifi.supplicant.QosPolicyStatusCode;
 import android.hardware.wifi.supplicant.StaIfaceCallbackState;
@@ -95,8 +97,10 @@ import android.hardware.wifi.supplicant.WpaDriverCapabilitiesMask;
 import android.hardware.wifi.supplicant.WpsConfigError;
 import android.hardware.wifi.supplicant.WpsConfigMethods;
 import android.hardware.wifi.supplicant.WpsErrorIndication;
+import android.net.DscpPolicy;
 import android.net.MacAddress;
 import android.net.NetworkAgent;
+import android.net.wifi.QosPolicyParams;
 import android.net.wifi.ScanResult;
 import android.net.wifi.SecurityParams;
 import android.net.wifi.SupplicantState;
@@ -2372,6 +2376,29 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
                 qosPolicyRequestList.get(1).requestType);
     }
 
+    /**
+     * Tests the conversion method
+     * {@link SupplicantStaIfaceHalAidlImpl#frameworkToHalQosPolicyScsData(QosPolicyParams)}
+     */
+    @Test
+    public void testFrameworkToHalQosPolicyScsData() throws Exception {
+        byte translatedPolicyId = 15;
+        QosPolicyParams frameworkPolicy = new QosPolicyParams.Builder(
+                5 /* policyId */, QosPolicyParams.DIRECTION_DOWNLINK)
+                .setSourceAddress(MacAddress.fromString("00:11:22:33:44:55"))
+                .setDestinationAddress(MacAddress.fromString("aa:bb:cc:dd:ee:ff"))
+                .setDscp(25)
+                .setUserPriority(QosPolicyParams.USER_PRIORITY_BACKGROUND_HIGH)
+                .setSourcePort(17)
+                .setProtocol(QosPolicyParams.PROTOCOL_TCP)
+                .setDestinationPortRange(10, 12)
+                .build();
+        frameworkPolicy.setTranslatedPolicyId(translatedPolicyId);
+        QosPolicyScsData halPolicy = SupplicantStaIfaceHalAidlImpl
+                .frameworkToHalQosPolicyScsData(frameworkPolicy);
+        compareQosPolicyParamsToHal(frameworkPolicy, halPolicy);
+    }
+
     private void verifySetEapAnonymousIdentity(boolean updateToNativeService)
             throws Exception {
         int testFrameworkNetworkId = 9;
@@ -2477,6 +2504,44 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
         qosPolicyData.dscp = (byte) dscp;
         qosPolicyData.classifierParams = classifierParams;
         return qosPolicyData;
+    }
+
+    private void compareQosPolicyParamsToHal(QosPolicyParams frameworkPolicy,
+            QosPolicyScsData halPolicy) {
+        assertEquals((byte) frameworkPolicy.getTranslatedPolicyId(), halPolicy.policyId);
+        assertEquals((byte) frameworkPolicy.getUserPriority(), halPolicy.userPriority);
+
+        QosPolicyClassifierParams classifierParams = halPolicy.classifierParams;
+        int paramsMask = classifierParams.classifierParamMask;
+
+        if (frameworkPolicy.getSourceAddress() != null) {
+            assertNotEquals(0, paramsMask & QosPolicyClassifierParamsMask.SRC_IP);
+            assertArrayEquals(frameworkPolicy.getSourceAddress().toByteArray(),
+                    classifierParams.srcIp);
+        }
+        if (frameworkPolicy.getDestinationAddress() != null) {
+            assertNotEquals(0, paramsMask & QosPolicyClassifierParamsMask.DST_IP);
+            assertArrayEquals(frameworkPolicy.getDestinationAddress().toByteArray(),
+                    classifierParams.dstIp);
+        }
+        if (frameworkPolicy.getSourcePort() != DscpPolicy.SOURCE_PORT_ANY) {
+            assertNotEquals(0, paramsMask & QosPolicyClassifierParamsMask.SRC_PORT);
+            assertEquals(frameworkPolicy.getSourcePort(), classifierParams.srcPort);
+        }
+        if (frameworkPolicy.getDestinationPortRange() != null) {
+            assertNotEquals(0, paramsMask & QosPolicyClassifierParamsMask.DST_PORT_RANGE);
+            PortRange portRange = classifierParams.dstPortRange;
+            int[] halDstPortRange = new int[]{portRange.startPort, portRange.endPort};
+            assertArrayEquals(frameworkPolicy.getDestinationPortRange(), halDstPortRange);
+        }
+        if (frameworkPolicy.getProtocol() != QosPolicyParams.PROTOCOL_ANY) {
+            assertNotEquals(0, paramsMask & QosPolicyClassifierParamsMask.PROTOCOL_NEXT_HEADER);
+            assertEquals((byte) frameworkPolicy.getProtocol(), classifierParams.protocolNextHdr);
+        }
+        if (frameworkPolicy.getDscp() != QosPolicyParams.DSCP_ANY) {
+            assertNotEquals(0, paramsMask & QosPolicyClassifierParamsMask.DSCP);
+            assertEquals((byte) frameworkPolicy.getDscp(), classifierParams.dscp);
+        }
     }
 
     /**
@@ -2853,21 +2918,30 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
         // initialize MLO Links
         MloLinksInfo info = new MloLinksInfo();
         MloLink[] links = new MloLink[3];
+        // link 0
         links[0] = new android.hardware.wifi.supplicant.MloLink();
         links[0].linkId = 1;
         links[0].staLinkMacAddress = new byte[]{0x00, 0x01, 0x02, 0x03, 0x04, 0x01};
         links[0].tidsDownlinkMap = Byte.MAX_VALUE;
         links[0].tidsDownlinkMap = Byte.MIN_VALUE;
+        links[0].apLinkMacAddress = new byte[]{0x00, 0x0a, 0x0b, 0x0c, 0x0d, 0x01};
+        links[0].frequencyMHz = 5160;
+        // link 1
         links[1] = new android.hardware.wifi.supplicant.MloLink();
         links[1].linkId = 2;
         links[1].staLinkMacAddress = new byte[]{0x00, 0x01, 0x02, 0x03, 0x04, 0x02};
         links[1].tidsDownlinkMap =  1 << mDownlinkTid;
         links[1].tidsUplinkMap = 1 << mUplinkTid;
+        links[1].apLinkMacAddress = new byte[]{0x00, 0x0a, 0x0b, 0x0c, 0x0d, 0x02};
+        links[1].frequencyMHz = 2437;
+        // link 2
         links[2] = new android.hardware.wifi.supplicant.MloLink();
         links[2].linkId = 3;
         links[2].staLinkMacAddress = new byte[]{0x00, 0x01, 0x02, 0x03, 0x04, 0x03};
         links[2].tidsDownlinkMap = 0;
         links[2].tidsUplinkMap = 0;
+        links[2].apLinkMacAddress = new byte[]{0x00, 0x0a, 0x0b, 0x0c, 0x0d, 0x03};
+        links[2].frequencyMHz = 6835;
         info.links = links;
         executeAndValidateInitializationSequence();
         // Mock MloLinksInfo as null.
@@ -2886,19 +2960,31 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
         // Check all return values.
         assertNotNull(nativeInfo);
         assertEquals(nativeInfo.links.length, info.links.length);
+        // link 0
         assertEquals(nativeInfo.links[0].getLinkId(), info.links[0].linkId);
-        assertEquals(nativeInfo.links[0].getMacAddress(),
+        assertEquals(nativeInfo.links[0].getStaMacAddress(),
                 MacAddress.fromBytes(info.links[0].staLinkMacAddress));
         assertTrue(nativeInfo.links[0].isAnyTidMapped());
+        assertEquals(nativeInfo.links[0].getApMacAddress(),
+                MacAddress.fromBytes(info.links[0].apLinkMacAddress));
+        assertEquals(nativeInfo.links[0].getFrequencyMHz(), info.links[0].frequencyMHz);
+        // link 1
         assertEquals(nativeInfo.links[1].getLinkId(), info.links[1].linkId);
-        assertEquals(nativeInfo.links[1].getMacAddress(),
+        assertEquals(nativeInfo.links[1].getStaMacAddress(),
                 MacAddress.fromBytes(info.links[1].staLinkMacAddress));
         assertTrue(nativeInfo.links[1].isAnyTidMapped());
         assertTrue(nativeInfo.links[1].isTidMappedtoDownlink((byte) mDownlinkTid));
         assertTrue(nativeInfo.links[1].isTidMappedToUplink((byte) mUplinkTid));
+        assertEquals(nativeInfo.links[1].getApMacAddress(),
+                MacAddress.fromBytes(info.links[1].apLinkMacAddress));
+        assertEquals(nativeInfo.links[1].getFrequencyMHz(), info.links[1].frequencyMHz);
+        // link 2
         assertEquals(nativeInfo.links[2].getLinkId(), info.links[2].linkId);
-        assertEquals(nativeInfo.links[2].getMacAddress(),
+        assertEquals(nativeInfo.links[2].getStaMacAddress(),
                 MacAddress.fromBytes(info.links[2].staLinkMacAddress));
         assertFalse(nativeInfo.links[2].isAnyTidMapped());
+        assertEquals(nativeInfo.links[2].getApMacAddress(),
+                MacAddress.fromBytes(info.links[2].apLinkMacAddress));
+        assertEquals(nativeInfo.links[2].getFrequencyMHz(), info.links[2].frequencyMHz);
     }
 }

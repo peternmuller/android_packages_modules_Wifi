@@ -17,7 +17,7 @@
 package android.net.wifi.aware;
 
 import android.annotation.NonNull;
-import android.annotation.Nullable;
+import android.annotation.SystemApi;
 
 import java.util.List;
 
@@ -90,6 +90,59 @@ public class DiscoverySessionCallback {
      * or {@link SubscribeConfig.Builder#setTtlSec(int)}).
      */
     public void onSessionTerminated() {
+        /* empty */
+    }
+
+    /**
+     * Called when a discovery session (publish or subscribe) has been suspended successfully.
+     * Suspension is triggered by {@link DiscoverySession#suspend()}.
+     * @hide
+     */
+    @SystemApi
+    public void onSessionSuspendSucceeded() {
+        /* empty */
+    }
+
+    /**
+     * Called when a discovery session (publish or subscribe) has failed to be suspended
+     * successfully. Suspension is triggered by {@link DiscoverySession#suspend()}.
+     *
+     * @param reason One of:
+     *      {@link WifiAwareManager#WIFI_AWARE_SUSPEND_REDUNDANT_REQUEST},
+     *      {@link WifiAwareManager#WIFI_AWARE_SUSPEND_INVALID_SESSION},
+     *      {@link WifiAwareManager#WIFI_AWARE_SUSPEND_CANNOT_SUSPEND},
+     *      {@link WifiAwareManager#WIFI_AWARE_SUSPEND_INTERNAL_ERROR}
+     * @hide
+     */
+    @SystemApi
+    public void onSessionSuspendFailed(
+            @WifiAwareManager.SessionSuspensionFailedReasonCode int reason) {
+        /* empty */
+    }
+
+    /**
+     * Called when a discovery session (publish or subscribe) has been resumed from suspension
+     * successfully. Resumption is triggered by {@link DiscoverySession#resume()}.
+     * @hide
+     */
+    @SystemApi
+    public void onSessionResumeSucceeded() {
+        /* empty */
+    }
+
+    /**
+     * Called when a discovery session (publish or subscribe) has failed to be resumed from
+     * suspension successfully. Resumption is triggered by {@link DiscoverySession#resume()}.
+     *
+     * @param reason One of:
+     *      {@link WifiAwareManager#WIFI_AWARE_RESUME_REDUNDANT_REQUEST},
+     *      {@link WifiAwareManager#WIFI_AWARE_RESUME_INVALID_SESSION},
+     *      {@link WifiAwareManager#WIFI_AWARE_RESUME_INTERNAL_ERROR}
+     * @hide
+     */
+    @SystemApi
+    public void onSessionResumeFailed(
+            @WifiAwareManager.SessionResumptionFailedReasonCode int reason) {
         /* empty */
     }
 
@@ -254,7 +307,8 @@ public class DiscoverySessionCallback {
     }
 
     /**
-     * Callback indicate that a pairing request is received from peer.
+     * Callback indicating that a pairing request is received from peer.
+     *
      * @param peerHandle The peer's handle where the request is from
      * @param requestId The ID of the Aware pairing session
      */
@@ -263,40 +317,70 @@ public class DiscoverySessionCallback {
     }
 
     /**
-     * Callback indicate that a pairing setup process is finished.
-     * @param peerHandle The peer's handle of the device pairing process with
-     * @param accept True is the pairing is success, false otherwise
-     * @param alias If accept is true, this is the paired device alias set by the caller.
-     * {@link DiscoverySession#initiatePairingRequest(PeerHandle, String, String)} or
-     * {@link DiscoverySession#respondToPairingRequest(int, PeerHandle, boolean, String, String)}
+     * Callback indicating that a pairing setup process succeeded.
+     *
+     * @param peerHandle The pairing peer handle.
+     * @param alias      This is the paired device alias set by the caller.
+     *                   {@link DiscoverySession#initiatePairingRequest(PeerHandle, String, int, String)}
+     *                   or
+     *                   {@link DiscoverySession#acceptPairingRequest(int, PeerHandle, String, int, String)}
      */
-    public void onPairingSetupConfirmed(@NonNull PeerHandle peerHandle, boolean accept,
-            @Nullable String alias) {
+    public void onPairingSetupSucceeded(@NonNull PeerHandle peerHandle,
+            @NonNull String alias) {
 
     }
 
     /**
-     * Callback indicate that a pairing verification process is finished.
-     * @param peerHandle The peer's handle of the device pairing process with
-     * @param accept True is the pairing is success, false otherwise
-     * @param alias If accept is true, this is the paired device alias set by the caller.
-     * {@link DiscoverySession#initiatePairingRequest(PeerHandle, String, String)} or
-     * {@link DiscoverySession#respondToPairingRequest(int, PeerHandle, boolean, String, String)}
+     * Callback indicating that a pairing setup process failed.
+     *
+     * @param peerHandle The pairing peer handle.
      */
-    public void onPairingVerificationConfirmed(@NonNull PeerHandle peerHandle, boolean accept,
-            @Nullable String alias){
+    public void onPairingSetupFailed(@NonNull PeerHandle peerHandle) {
 
     }
 
     /**
-     * Callback indicate that a Bootstrapping method negotiation process is finished.
+     * Callback indicating that a pairing verification process succeeded.
+     *
+     * @param peerHandle The pairing peer handle
+     * @param alias      This is the paired device alias set by the caller.
+     *                   {@link DiscoverySession#initiatePairingRequest(PeerHandle, String, int, String)}
+     *                   or
+     *                   {@link DiscoverySession#acceptPairingRequest(int, PeerHandle, String, int, String)}
+     */
+    public void onPairingVerificationSucceed(@NonNull PeerHandle peerHandle,
+            @NonNull String alias){
+
+    }
+
+    /**
+     * Callback indicating that a pairing verification process failed.
+     *
+     * @param peerHandle The pairing peer handle
+     */
+    public void onPairingVerificationFailed(@NonNull PeerHandle peerHandle) {
+
+    }
+
+    /**
+     * Callback indicating that a Bootstrapping method negotiation succeeded.
      * The follow-up out-of-band bootstrapping can start
-     * @param peerHandle The peer's handle of the device bootstrapping negotiated with
-     * @param accept True is the bootstrapping method is accepted by the peer, false otherwise
+     *
+     * @param peerHandle The bootstrapping peer handle
+     * @param accept True if the bootstrapping method is accepted by the peer, false otherwise
      * @param method The bootstrapping method accept by the peer
      */
-    public void onBootstrappingConfirmed(@NonNull PeerHandle peerHandle, boolean accept,
+    public void onBootstrappingSucceeded(@NonNull PeerHandle peerHandle, boolean accept,
             @AwarePairingConfig.BootstrappingMethod int method){
+
+    }
+
+    /**
+     * Callback indicating that a Bootstrapping method negotiation failed.
+     *
+     * @param peerHandle The bootstrapping peer handle
+     */
+    public void onBootstrappingFailed(@NonNull PeerHandle peerHandle) {
 
     }
 }

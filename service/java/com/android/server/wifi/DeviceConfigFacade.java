@@ -209,6 +209,12 @@ public class DeviceConfigFacade {
     private boolean mP2pFailureBugreportEnabled;
     private boolean mApmEnhancementEnabled;
     private boolean mAwareSuspensionEnabled;
+    private boolean mHighPerfLockDeprecated;
+    private boolean mOobPseudonymEnabled;
+    private boolean mApplicationQosPolicyApiEnabled;
+    private boolean mAdjustPollRssiIntervalEnabled;
+    private boolean mSoftwarePnoEnabled;
+    private boolean mIncludePasspointSsidsInPnoScans;
 
     public DeviceConfigFacade(Context context, Handler handler, WifiMetrics wifiMetrics) {
         mContext = context;
@@ -388,6 +394,18 @@ public class DeviceConfigFacade {
                 "apm_enhancement_enabled", false);
         mAwareSuspensionEnabled = DeviceConfig.getBoolean(NAMESPACE,
                 "aware_suspension_enabled", false);
+        mHighPerfLockDeprecated = DeviceConfig.getBoolean(NAMESPACE,
+                "high_perf_lock_deprecated", false);
+        mOobPseudonymEnabled = DeviceConfig.getBoolean(NAMESPACE,
+                "oob_pseudonym_enabled", false);
+        mApplicationQosPolicyApiEnabled = DeviceConfig.getBoolean(NAMESPACE,
+                "application_qos_policy_api_enabled", false);
+        mAdjustPollRssiIntervalEnabled = DeviceConfig.getBoolean(NAMESPACE,
+                "adjust_poll_rssi_interval_enabled", false);
+        mSoftwarePnoEnabled = DeviceConfig.getBoolean(NAMESPACE,
+                "software_pno_enabled", false);
+        mIncludePasspointSsidsInPnoScans = DeviceConfig.getBoolean(NAMESPACE,
+                "include_passpoint_ssids_in_pno_scans", false);
     }
 
     private Set<String> getUnmodifiableSetQuoted(String key) {
@@ -831,5 +849,47 @@ public class DeviceConfigFacade {
      */
     public boolean isAwareSuspensionEnabled() {
         return mAwareSuspensionEnabled;
+    }
+
+    /**
+     * Gets the feature flag for High Perf lock deprecation
+     */
+    public boolean isHighPerfLockDeprecated() {
+        return mHighPerfLockDeprecated;
+    }
+
+    /**
+     * Gets the feature flag for the OOB pseudonym of EAP-SIM/AKA/AKA'
+     */
+    public boolean isOobPseudonymEnabled() {
+        return mOobPseudonymEnabled;
+    }
+
+    /**
+     * Gets the feature flag indicating whether the application QoS policy API is enabled.
+     */
+    public boolean isApplicationQosPolicyApiEnabled() {
+        return mApplicationQosPolicyApiEnabled;
+    }
+
+    /**
+     * Gets the feature flag for adjusting link layer stats and RSSI polling interval
+     */
+    public boolean isAdjustPollRssiIntervalEnabled() {
+        return mAdjustPollRssiIntervalEnabled;
+    }
+
+    /**
+     * Gets the feature flag for Software PNO
+     */
+    public boolean isSoftwarePnoEnabled() {
+        return mSoftwarePnoEnabled;
+    }
+
+    /**
+     * Gets the feature flag indicating whether Passpoint SSIDs should be included in PNO scans.
+     */
+    public boolean includePasspointSsidsInPnoScans() {
+        return mIncludePasspointSsidsInPnoScans;
     }
 }

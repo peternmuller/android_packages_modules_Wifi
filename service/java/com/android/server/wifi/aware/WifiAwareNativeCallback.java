@@ -17,6 +17,7 @@
 package com.android.server.wifi.aware;
 
 import android.net.wifi.aware.AwarePairingConfig;
+import android.net.wifi.aware.IdentityChangedListener;
 import android.net.wifi.aware.WifiAwareChannelInfo;
 import android.util.Log;
 import android.util.SparseArray;
@@ -282,6 +283,21 @@ public class WifiAwareNativeCallback implements WifiNanIface.Callback,
         }
     }
 
+    @Override
+    public void notifySuspendResponse(short id, int status) {
+        mWifiAwareStateManager.onSuspendResponse(id, status);
+    }
+
+    @Override
+    public void notifyResumeResponse(short id, int status) {
+        mWifiAwareStateManager.onResumeResponse(id, status);
+    }
+
+    @Override
+    public void notifyTerminatePairingResponse(short id, int status) {
+        mWifiAwareStateManager.onEndPairingResponse(id, status == NanStatusCode.SUCCESS,
+                status);
+    }
 
     @Override
     public void eventClusterEvent(int eventType, byte[] addr) {
@@ -290,10 +306,10 @@ public class WifiAwareNativeCallback implements WifiNanIface.Callback,
             mWifiAwareStateManager.onInterfaceAddressChangeNotification(addr);
         } else if (eventType == NanClusterEventType.STARTED_CLUSTER) {
             mWifiAwareStateManager.onClusterChangeNotification(
-                    WifiAwareClientState.CLUSTER_CHANGE_EVENT_STARTED, addr);
+                    IdentityChangedListener.CLUSTER_CHANGE_EVENT_STARTED, addr);
         } else if (eventType == NanClusterEventType.JOINED_CLUSTER) {
             mWifiAwareStateManager.onClusterChangeNotification(
-                    WifiAwareClientState.CLUSTER_CHANGE_EVENT_JOINED, addr);
+                    IdentityChangedListener.CLUSTER_CHANGE_EVENT_JOINED, addr);
         } else {
             Log.e(TAG, "eventClusterEvent: invalid eventType=" + eventType);
         }
@@ -413,8 +429,10 @@ public class WifiAwareNativeCallback implements WifiNanIface.Callback,
     }
 
     @Override
-    public void eventBootstrappingConfirm(int pairingId, boolean accept, int reason) {
-        mWifiAwareStateManager.onBootstrappingConfirmNotification(pairingId, accept, reason);
+    public void eventBootstrappingConfirm(int bootstrappingId, int responseCode, int reason,
+            int comebackDelay, byte[] cookie) {
+        mWifiAwareStateManager.onBootstrappingConfirmNotification(bootstrappingId, responseCode,
+                reason, comebackDelay, cookie);
     }
 
         /**
