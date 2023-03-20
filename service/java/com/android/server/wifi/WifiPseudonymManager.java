@@ -127,6 +127,8 @@ public final class WifiPseudonymManager {
     @VisibleForTesting
     final CarrierSpecificServiceEntitlement.Callback mRetrieveCallback =
             new RetrieveCallback();
+    private final Set<PseudonymUpdatingListener> mPseudonymUpdatingListeners =
+            new ArraySet<>();
 
     WifiPseudonymManager(@NonNull WifiContext wifiContext, @NonNull WifiInjector wifiInjector,
             @NonNull Clock clock, @NonNull Looper wifiLooper) {
@@ -186,10 +188,25 @@ public final class WifiPseudonymManager {
      * the device will never connect to this carrier's WiFi until the user reboot the device or swap
      * the sim. With this safe check, our device will retry to retrieve the OOB pseudonym every 7
      * days if the last retrieval has failed and the device is in this carrier's WiFi coverage.
-     *
-     * @param carrierId carrier id for target carrier.
+     */
+    public void retrievePseudonymOnFailureTimeoutExpired(
+            @NonNull WifiConfiguration wifiConfiguration) {
+        if (wifiConfiguration.enterpriseConfig == null
+                || !wifiConfiguration.enterpriseConfig.isAuthenticationSimBased()) {
+            return;
+        }
+        retrievePseudonymOnFailureTimeoutExpired(wifiConfiguration.carrierId);
+    }
+
+    /**
+     * Retrieves the OOP pseudonym as a safe check if there isn't any valid pseudonym available,
+     * and it has passed 7 days since the last retrieval failure.
+     * @param carrierId The caller must be a SIM based wifi configuration or passpoint.
      */
     public void retrievePseudonymOnFailureTimeoutExpired(int carrierId) {
+        if (!mWifiInjector.getWifiCarrierInfoManager().isOobPseudonymFeatureEnabled(carrierId)) {
+            return;
+        }
         Optional<PseudonymInfo> optionalPseudonymInfo = getValidPseudonymInfo(carrierId);
         if (optionalPseudonymInfo.isPresent()) {
             return;
@@ -202,19 +219,41 @@ public final class WifiPseudonymManager {
     }
 
     /**
+     * Registers a {@link PseudonymUpdatingListener}.
+     */
+    public void registerPseudonymUpdatingListener(PseudonymUpdatingListener listener) {
+        mPseudonymUpdatingListeners.add(listener);
+    }
+
+    /**
+     * Unregisters the {@link PseudonymUpdatingListener}.
+     */
+    public void unregisterPseudonymUpdatingListener(PseudonymUpdatingListener listener) {
+        mPseudonymUpdatingListeners.remove(listener);
+    }
+
+    /**
      * Update the input WifiConfiguration's anonymous identity.
      *
      * @param wifiConfiguration WifiConfiguration which will be updated.
      * @return true if there is a valid pseudonym to update the WifiConfiguration, otherwise false.
      */
-    public boolean updateWifiConfiguration(@NonNull WifiConfiguration wifiConfiguration) {
+    public void updateWifiConfiguration(@NonNull WifiConfiguration wifiConfiguration) {
+        if (wifiConfiguration.enterpriseConfig == null
+                || !wifiConfiguration.enterpriseConfig.isAuthenticationSimBased()) {
+            return;
+        }
+        if (!mWifiInjector.getWifiCarrierInfoManager()
+                .isOobPseudonymFeatureEnabled(wifiConfiguration.carrierId)) {
+            return;
+        }
         WifiCarrierInfoManager wifiCarrierInfoManager = mWifiInjector.getWifiCarrierInfoManager();
         Optional<PseudonymInfo> optionalPseudonymInfo =
                 getValidPseudonymInfo(wifiConfiguration.carrierId);
         if (optionalPseudonymInfo.isEmpty()) {
             Log.w(TAG, "pseudonym is not available, the wifi configuration: "
                     + wifiConfiguration.getKey() + " can not be updated.");
-            return false;
+            return;
         }
 
         String pseudonym = optionalPseudonymInfo.get().getPseudonym();
@@ -223,7 +262,7 @@ public final class WifiPseudonymManager {
                         pseudonym);
         String existingIdentity = wifiConfiguration.enterpriseConfig.getAnonymousIdentity();
         if (TextUtils.equals(expectedIdentity, existingIdentity)) {
-            return true;
+            return;
         }
 
         wifiConfiguration.enterpriseConfig.setAnonymousIdentity(expectedIdentity);
@@ -237,7 +276,22 @@ public final class WifiPseudonymManager {
             mWifiInjector.getWifiNetworkSuggestionsManager()
                     .setAnonymousIdentity(wifiConfiguration);
         }
-        return true;
+    }
+
+    /**
+     * If the OOB Pseudonym feature supports the WifiConfiguration, enable the
+     * strict conservative peer mode.
+     */
+    public void enableStrictConservativePeerModeIfSupported(
+            @NonNull WifiConfiguration wifiConfiguration) {
+        if (wifiConfiguration.enterpriseConfig == null) {
+            return;
+        }
+        if (wifiConfiguration.enterpriseConfig.isAuthenticationSimBased()
+                && mWifiInjector.getWifiCarrierInfoManager()
+                        .isOobPseudonymFeatureEnabled(wifiConfiguration.carrierId)) {
+            wifiConfiguration.enterpriseConfig.setStrictConservativePeerMode(true);
+        }
     }
 
     /**
@@ -382,6 +436,13 @@ public final class WifiPseudonymManager {
              */
             mWifiHandler.removeMessages(mCarrierId);
 
+            if (!mWifiInjector.getWifiCarrierInfoManager()
+                    .isOobPseudonymFeatureEnabled(mCarrierId)) {
+                vlogd("do nothing, OOB Pseudonym feature is not enabled for carrier: "
+                        + mCarrierId);
+                return;
+            }
+
             int subId = mWifiInjector.getWifiCarrierInfoManager().getMatchingSubId(mCarrierId);
             if (subId == SubscriptionManager.INVALID_SUBSCRIPTION_ID) {
                 Log.e(TAG, "RetrieveRunnable: " + mCarrierId + ": subId is invalid. Exit.");
@@ -438,6 +499,9 @@ public final class WifiPseudonymManager {
             vlogd("RetrieveCallback: OOB pseudonym is retrieved!!! for carrierId " + carrierId
                     + ": " + pseudonymInfo);
             setPseudonymAndScheduleRefresh(carrierId, pseudonymInfo);
+            for (PseudonymUpdatingListener listener : mPseudonymUpdatingListeners) {
+                listener.onUpdated(carrierId, pseudonymInfo.getPseudonym());
+            }
             mLastFailureTimestampArray.put(carrierId, 0);
             mRetryTimesArrayForConnectionError.put(carrierId, 0);
             mRetryTimesArrayForServerError.put(carrierId, 0);
@@ -490,5 +554,13 @@ public final class WifiPseudonymManager {
                     + interval + " milliseconds");
             scheduleToRetrieveDelayed(carrierId, interval);
         }
+    }
+
+    /**
+     * Listener to be notified the OOB pseudonym updating.
+     */
+    public interface PseudonymUpdatingListener {
+        /** Notifies the pseudonym is updated. */
+        void onUpdated(int carrierId, String pseudonym);
     }
 }
