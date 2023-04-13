@@ -129,7 +129,6 @@ public class WifiHalAidlImpl implements IWifiHal {
     private boolean registerHalCallback() {
         final String methodStr = "registerHalCallback";
         try {
-            if (!checkWifiAndLogFailure(methodStr)) return false;
             mWifi.registerEventCallback(mHalCallback);
             return true;
         } catch (RemoteException e) {
@@ -264,7 +263,7 @@ public class WifiHalAidlImpl implements IWifiHal {
                 // Stop wifi just in case. Stop will invalidate the callbacks, so re-register them.
                 stopInternal();
                 registerHalCallback();
-                Log.i(TAG, "Initialization is complete");
+                Log.i(TAG, "Initialization was successful");
             } catch (RemoteException e) {
                 handleRemoteException(e, methodStr);
             }

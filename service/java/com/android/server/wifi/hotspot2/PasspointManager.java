@@ -502,7 +502,6 @@ public class PasspointManager {
                 >= WifiManager.getMaxNumberOfNetworkSuggestionsPerApp(mIsLowMemory)) {
             Log.e(TAG, "packageName " + packageName + " has too many passpoint with exceed the "
                     + "limitation");
-            return false;
         }
 
         mWifiCarrierInfoManager.tryUpdateCarrierIdForPasspoint(config);
