@@ -7809,6 +7809,7 @@ public class WifiManager {
      *
      * @hide
      */
+    @SystemApi
     public interface WifiLowLatencyLockListener {
         /**
          * Provides low latency mode is activated or not. Triggered when Wi-Fi chip enters into low
@@ -7827,7 +7828,7 @@ public class WifiManager {
          *
          * @param ownerUids An array of UIDs.
          */
-        default void onOwnershipChanged(int[] ownerUids) {}
+        default void onOwnershipChanged(@NonNull int[] ownerUids) {}
 
         /**
          * Provides UIDs of the applications which acquired the low latency lock and is currently
@@ -7842,7 +7843,7 @@ public class WifiManager {
          *
          * @param activeUids An array of UIDs.
          */
-        default void onActiveUsersChanged(int[] activeUids) {}
+        default void onActiveUsersChanged(@NonNull int[] activeUids) {}
     }
 
     /**
@@ -7870,14 +7871,14 @@ public class WifiManager {
         }
 
         @Override
-        public void onOwnershipChanged(int[] ownerUids) {
+        public void onOwnershipChanged(@NonNull int[] ownerUids) {
             Binder.clearCallingIdentity();
             mExecutor.execute(() -> mListener.onOwnershipChanged(ownerUids));
 
         }
 
         @Override
-        public void onActiveUsersChanged(int[] activeUids) {
+        public void onActiveUsersChanged(@NonNull int[] activeUids) {
             Binder.clearCallingIdentity();
             mExecutor.execute(() -> mListener.onActiveUsersChanged(activeUids));
         }
@@ -7898,6 +7899,7 @@ public class WifiManager {
      * @throws SecurityException if the caller is not allowed to call this API
      * @hide
      */
+    @SystemApi
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     @RequiresPermission(anyOf = {android.Manifest.permission.NETWORK_SETTINGS,
             MANAGE_WIFI_NETWORK_SELECTION})
@@ -7933,6 +7935,8 @@ public class WifiManager {
      * @throws IllegalArgumentException if incorrect input arguments are provided.
      * @hide
      */
+    @SystemApi
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     public void removeWifiLowLatencyLockListener(@NonNull WifiLowLatencyLockListener listener) {
         if (listener == null) throw new IllegalArgumentException("listener cannot be null");
         if (mVerboseLoggingEnabled) {
@@ -10686,15 +10690,15 @@ public class WifiManager {
      *
      * @param band one of the following band constants defined in {@code WifiScanner#WIFI_BAND_*}
      *             constants.
-     *             1. {@code WifiScanner#WIFI_BAND_UNSPECIFIED} - no band specified; Looks for the
+     *             1. {@code WifiScanner#WIFI_BAND_UNSPECIFIED}=0 - no band specified; Looks for the
      *                channels in all the available bands - 2.4 GHz, 5 GHz, 6 GHz and 60 GHz
-     *             2. {@code WifiScanner#WIFI_BAND_24_GHZ}
-     *             3. {@code WifiScanner#WIFI_BAND_5_GHZ_WITH_DFS}
-     *             4. {@code WifiScanner#WIFI_BAND_BOTH_WITH_DFS}
-     *             5. {@code WifiScanner#WIFI_BAND_6_GHZ}
-     *             6. {@code WifiScanner#WIFI_BAND_24_5_WITH_DFS_6_GHZ}
-     *             7. {@code WifiScanner#WIFI_BAND_60_GHZ}
-     *             8. {@code WifiScanner#WIFI_BAND_24_5_WITH_DFS_6_60_GHZ}
+     *             2. {@code WifiScanner#WIFI_BAND_24_GHZ}=1
+     *             3. {@code WifiScanner#WIFI_BAND_5_GHZ_WITH_DFS}=6
+     *             4. {@code WifiScanner#WIFI_BAND_BOTH_WITH_DFS}=7
+     *             5. {@code WifiScanner#WIFI_BAND_6_GHZ}=8
+     *             6. {@code WifiScanner#WIFI_BAND_24_5_WITH_DFS_6_GHZ}=15
+     *             7. {@code WifiScanner#WIFI_BAND_60_GHZ}=16
+     *             8. {@code WifiScanner#WIFI_BAND_24_5_WITH_DFS_6_60_GHZ}=31
      * @param mode Bitwise OR of {@code WifiAvailableChannel#OP_MODE_*} constants
      *        e.g. {@link WifiAvailableChannel#OP_MODE_WIFI_AWARE}
      * @return a list of {@link WifiAvailableChannel}
@@ -10707,7 +10711,7 @@ public class WifiManager {
     @NonNull
     @RequiresPermission(NEARBY_WIFI_DEVICES)
     public List<WifiAvailableChannel> getAllowedChannels(
-            @WifiScanner.WifiBand int band,
+            int band,
             @WifiAvailableChannel.OpMode int mode) {
         if (!SdkLevel.isAtLeastS()) {
             throw new UnsupportedOperationException();
@@ -10740,15 +10744,15 @@ public class WifiManager {
      *
      * @param band one of the following band constants defined in {@code WifiScanner#WIFI_BAND_*}
      *             constants.
-     *             1. {@code WifiScanner#WIFI_BAND_UNSPECIFIED} - no band specified; Looks for the
+     *             1. {@code WifiScanner#WIFI_BAND_UNSPECIFIED}=0 - no band specified; Looks for the
      *                channels in all the available bands - 2.4 GHz, 5 GHz, 6 GHz and 60 GHz
-     *             2. {@code WifiScanner#WIFI_BAND_24_GHZ}
-     *             3. {@code WifiScanner#WIFI_BAND_5_GHZ_WITH_DFS}
-     *             4. {@code WifiScanner#WIFI_BAND_BOTH_WITH_DFS}
-     *             5. {@code WifiScanner#WIFI_BAND_6_GHZ}
-     *             6. {@code WifiScanner#WIFI_BAND_24_5_WITH_DFS_6_GHZ}
-     *             7. {@code WifiScanner#WIFI_BAND_60_GHZ}
-     *             8. {@code WifiScanner#WIFI_BAND_24_5_WITH_DFS_6_60_GHZ}
+     *             2. {@code WifiScanner#WIFI_BAND_24_GHZ}=1
+     *             3. {@code WifiScanner#WIFI_BAND_5_GHZ_WITH_DFS}=6
+     *             4. {@code WifiScanner#WIFI_BAND_BOTH_WITH_DFS}=7
+     *             5. {@code WifiScanner#WIFI_BAND_6_GHZ}=8
+     *             6. {@code WifiScanner#WIFI_BAND_24_5_WITH_DFS_6_GHZ}=15
+     *             7. {@code WifiScanner#WIFI_BAND_60_GHZ}=16
+     *             8. {@code WifiScanner#WIFI_BAND_24_5_WITH_DFS_6_60_GHZ}=31
      * @param mode Bitwise OR of {@code WifiAvailableChannel#OP_MODE_*} constants
      *        e.g. {@link WifiAvailableChannel#OP_MODE_WIFI_AWARE}
      * @return a list of {@link WifiAvailableChannel}
@@ -10761,7 +10765,7 @@ public class WifiManager {
     @NonNull
     @RequiresPermission(NEARBY_WIFI_DEVICES)
     public List<WifiAvailableChannel> getUsableChannels(
-            @WifiScanner.WifiBand int band,
+            int band,
             @WifiAvailableChannel.OpMode int mode) {
         if (!SdkLevel.isAtLeastS()) {
             throw new UnsupportedOperationException();
@@ -11681,6 +11685,7 @@ public class WifiManager {
      * @throws UnsupportedOperationException if the get operation is not supported.
      * @hide
      */
+    @SystemApi
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     @RequiresPermission(MANAGE_WIFI_NETWORK_SELECTION)
     public void getMaxMloAssociationLinkCount(@NonNull @CallbackExecutor Executor executor,
@@ -11726,6 +11731,7 @@ public class WifiManager {
      * @throws UnsupportedOperationException if the set operation is not supported.
      * @hide
      */
+    @SystemApi
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     @RequiresPermission(MANAGE_WIFI_NETWORK_SELECTION)
     public void getMaxMloStrLinkCount(@NonNull @CallbackExecutor Executor executor,
