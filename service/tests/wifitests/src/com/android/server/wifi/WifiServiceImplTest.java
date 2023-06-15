@@ -228,6 +228,7 @@ import com.android.server.wifi.coex.CoexManager;
 import com.android.server.wifi.entitlement.PseudonymInfo;
 import com.android.server.wifi.hotspot2.PasspointManager;
 import com.android.server.wifi.hotspot2.PasspointProvisioningTestUtil;
+import com.android.server.wifi.proto.WifiStatsLog;
 import com.android.server.wifi.proto.nano.WifiMetricsProto.UserActionEvent;
 import com.android.server.wifi.util.ActionListenerWrapper;
 import com.android.server.wifi.util.ApConfigUtil;
@@ -455,6 +456,7 @@ public class WifiServiceImplTest extends WifiBaseTest {
     @Mock SsidTranslator mSsidTranslator;
     @Mock InterfaceConflictManager mInterfaceConflictManager;
     @Mock WifiKeyStore mWifiKeyStore;
+    @Mock WifiPulledAtomLogger mWifiPulledAtomLogger;
     @Mock ScoringParams mScoringParams;
     @Mock ApplicationQosPolicyRequestHandler mApplicationQosPolicyRequestHandler;
 
@@ -550,6 +552,7 @@ public class WifiServiceImplTest extends WifiBaseTest {
         when(mWifiInjector.getWifiNetworkSuggestionsManager())
                 .thenReturn(mWifiNetworkSuggestionsManager);
         when(mWifiInjector.makeTelephonyManager()).thenReturn(mTelephonyManager);
+        when(mWifiInjector.getWifiPulledAtomLogger()).thenReturn(mWifiPulledAtomLogger);
         when(mContext.getSystemService(TelephonyManager.class)).thenReturn(mTelephonyManager);
         when(mWifiInjector.getCoexManager()).thenReturn(mCoexManager);
         when(mWifiInjector.getWifiConfigManager()).thenReturn(mWifiConfigManager);
@@ -1894,13 +1897,24 @@ public class WifiServiceImplTest extends WifiBaseTest {
         assertThrows(SecurityException.class,
                 () -> mWifiServiceImpl.setPnoScanEnabled(false, false, TEST_PACKAGE_NAME));
 
-        when(mWifiPermissionsUtil.checkManageWifiNetworkSelectionPermission(anyInt()))
-                .thenReturn(true);
+        if (SdkLevel.isAtLeastT()) {
+            when(mWifiPermissionsUtil.checkManageWifiNetworkSelectionPermission(anyInt()))
+                    .thenReturn(true);
+        } else {
+            when(mWifiPermissionsUtil.checkNetworkSettingsPermission(anyInt())).thenReturn(true);
+        }
         mWifiServiceImpl.setPnoScanEnabled(false, false, TEST_PACKAGE_NAME);
         verify(mLastCallerInfoManager).put(eq(WifiManager.API_SET_PNO_SCAN_ENABLED),
                 anyInt(), anyInt(), anyInt(), eq(TEST_PACKAGE_NAME), eq(false));
         mLooper.dispatchAll();
         verify(mWifiConnectivityManager).setPnoScanEnabledByFramework(false, false);
+    }
+
+    @Test
+    public void testSetPulledAtomCallbacks() {
+        mWifiServiceImpl.checkAndStartWifi();
+        mLooper.dispatchAll();
+        verify(mWifiPulledAtomLogger).setPullAtomCallback(WifiStatsLog.WIFI_MODULE_INFO);
     }
 
     /**
