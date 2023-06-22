@@ -7669,13 +7669,7 @@ public class WifiManager {
             synchronized (mBinder) {
                 if (mRefCounted ? (++mRefCount == 1) : (!mHeld)) {
                     try {
-                        Bundle extras = new Bundle();
-                        if (SdkLevel.isAtLeastS()) {
-                            extras.putParcelable(EXTRA_PARAM_KEY_ATTRIBUTION_SOURCE,
-                                    mContext.getAttributionSource());
-                        }
-                        mService.acquireWifiLock(mBinder, mLockType, mTag, mWorkSource,
-                                mContext.getOpPackageName(), extras);
+                        mService.acquireWifiLock(mBinder, mLockType, mTag, mWorkSource);
                         synchronized (WifiManager.this) {
                             if (mActiveLockCount >= MAX_ACTIVE_LOCKS) {
                                 mService.releaseWifiLock(mBinder);
@@ -7771,13 +7765,7 @@ public class WifiManager {
                 }
                 if (changed && mHeld) {
                     try {
-                        Bundle extras = new Bundle();
-                        if (SdkLevel.isAtLeastS()) {
-                            extras.putParcelable(EXTRA_PARAM_KEY_ATTRIBUTION_SOURCE,
-                                    mContext.getAttributionSource());
-                        }
-                        mService.updateWifiLockWorkSource(mBinder, mWorkSource,
-                                mContext.getOpPackageName(), extras);
+                        mService.updateWifiLockWorkSource(mBinder, mWorkSource);
                     } catch (RemoteException e) {
                         throw e.rethrowFromSystemServer();
                     }
