@@ -4093,6 +4093,15 @@ public class WifiManager {
     }
 
     /**
+     * @return true if this device supports Low latency mode.
+     * @hide
+     */
+    @SystemApi
+    public boolean isLowLatencyModeSupported() {
+        return isFeatureSupported(WIFI_FEATURE_LOW_LATENCY);
+    }
+
+    /**
      * Check if the chipset supports 2.4GHz band.
      * @return {@code true} if supported, {@code false} otherwise.
      */
@@ -7809,6 +7818,7 @@ public class WifiManager {
      *
      * @hide
      */
+    @SystemApi
     public interface WifiLowLatencyLockListener {
         /**
          * Provides low latency mode is activated or not. Triggered when Wi-Fi chip enters into low
@@ -7899,6 +7909,7 @@ public class WifiManager {
      * @throws SecurityException if the caller is not allowed to call this API
      * @hide
      */
+    @SystemApi
     @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     @RequiresPermission(anyOf = {android.Manifest.permission.NETWORK_SETTINGS,
             MANAGE_WIFI_NETWORK_SELECTION})
@@ -7934,6 +7945,8 @@ public class WifiManager {
      * @throws IllegalArgumentException if incorrect input arguments are provided.
      * @hide
      */
+    @SystemApi
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
     public void removeWifiLowLatencyLockListener(@NonNull WifiLowLatencyLockListener listener) {
         if (listener == null) throw new IllegalArgumentException("listener cannot be null");
         if (mVerboseLoggingEnabled) {
@@ -11698,6 +11711,7 @@ public class WifiManager {
      * @throws UnsupportedOperationException if the get operation is not supported on this SDK.
      * @hide
      */
+    @SystemApi
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     @RequiresPermission(MANAGE_WIFI_NETWORK_SELECTION)
     public void getMaxMloAssociationLinkCount(@NonNull @CallbackExecutor Executor executor,
@@ -11743,6 +11757,7 @@ public class WifiManager {
      * @throws UnsupportedOperationException if the get operation is not supported on this SDK
      * @hide
      */
+    @SystemApi
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     @RequiresPermission(MANAGE_WIFI_NETWORK_SELECTION)
     public void getMaxMloStrLinkCount(@NonNull @CallbackExecutor Executor executor,
@@ -11784,6 +11799,7 @@ public class WifiManager {
      * @throws UnsupportedOperationException if the get operation is not supported on this SDK.
      * @hide
      */
+    @SystemApi
     @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
     @RequiresPermission(MANAGE_WIFI_NETWORK_SELECTION)
     public void getSupportedSimultaneousBandCombinations(
