@@ -704,6 +704,8 @@ public class WifiServiceImpl extends BaseWifiService {
 
     private void setPulledAtomCallbacks() {
         mWifiPulledAtomLogger.setPullAtomCallback(WifiStatsLog.WIFI_MODULE_INFO);
+        mWifiPulledAtomLogger.setPullAtomCallback(WifiStatsLog.WIFI_SETTING_INFO);
+        mWifiPulledAtomLogger.setPullAtomCallback(WifiStatsLog.WIFI_COMPLEX_SETTING_INFO);
     }
 
     private void updateLocationMode() {
@@ -5409,7 +5411,11 @@ public class WifiServiceImpl extends BaseWifiService {
     @Override
     public void enableVerboseLogging(int verbose) {
         enforceAccessPermission();
-        enforceNetworkSettingsPermission();
+        if (!checkNetworkSettingsPermission(Binder.getCallingPid(), Binder.getCallingUid())
+                && mContext.checkPermission(android.Manifest.permission.DUMP,
+                Binder.getCallingPid(), Binder.getCallingUid()) != PERMISSION_GRANTED) {
+            throw new SecurityException("Caller has neither NETWORK_SETTING nor dump permissions");
+        }
         mLog.info("enableVerboseLogging uid=% verbose=%")
                 .c(Binder.getCallingUid())
                 .c(verbose).flush();
