@@ -1874,6 +1874,7 @@ public class WifiServiceImplTest extends WifiBaseTest {
         // show key mode is always disabled at the beginning.
         verify(mWifiGlobals).setShowKeyVerboseLoggingModeEnabled(eq(false));
         verify(mActiveModeWarden).start();
+        assertTrue(mWifiThreadRunner.mVerboseLoggingEnabled);
     }
 
     /**
@@ -1917,6 +1918,8 @@ public class WifiServiceImplTest extends WifiBaseTest {
         mWifiServiceImpl.checkAndStartWifi();
         mLooper.dispatchAll();
         verify(mWifiPulledAtomLogger).setPullAtomCallback(WifiStatsLog.WIFI_MODULE_INFO);
+        verify(mWifiPulledAtomLogger).setPullAtomCallback(WifiStatsLog.WIFI_SETTING_INFO);
+        verify(mWifiPulledAtomLogger).setPullAtomCallback(WifiStatsLog.WIFI_COMPLEX_SETTING_INFO);
     }
 
     /**
@@ -5003,6 +5006,8 @@ public class WifiServiceImplTest extends WifiBaseTest {
         doNothing().when(mContext)
                 .enforceCallingOrSelfPermission(eq(android.Manifest.permission.NETWORK_SETTINGS),
                         eq("WifiService"));
+        when(mContext.checkPermission(eq(android.Manifest.permission.NETWORK_SETTINGS),
+                anyInt(), anyInt())).thenReturn(PackageManager.PERMISSION_GRANTED);
         // Verbose logging is enabled first in the constructor for WifiServiceImpl, so reset
         // before invocation.
         reset(mClientModeManager);
@@ -5076,15 +5081,15 @@ public class WifiServiceImplTest extends WifiBaseTest {
      */
     @Test
     public void testEnableVerboseLoggingWithNetworkSettingsPermission() throws Exception {
-        doNothing().when(mContext)
-                .enforceCallingOrSelfPermission(eq(android.Manifest.permission.NETWORK_SETTINGS),
-                        eq("WifiService"));
+        when(mContext.checkPermission(eq(android.Manifest.permission.NETWORK_SETTINGS),
+                anyInt(), anyInt())).thenReturn(PackageManager.PERMISSION_GRANTED);
         // Verbose logging is enabled first in the constructor for WifiServiceImpl, so reset
         // before invocation.
         reset(mClientModeManager);
         mWifiServiceImpl.enableVerboseLogging(WifiManager.VERBOSE_LOGGING_LEVEL_ENABLED);
         verify(mWifiSettingsConfigStore).put(WIFI_VERBOSE_LOGGING_ENABLED, true);
         verify(mActiveModeWarden).enableVerboseLogging(anyBoolean());
+        assertTrue(mWifiThreadRunner.mVerboseLoggingEnabled);
     }
 
     /**
@@ -5094,9 +5099,8 @@ public class WifiServiceImplTest extends WifiBaseTest {
      */
     @Test
     public void testEnableShowKeyVerboseLoggingWithNetworkSettingsPermission() throws Exception {
-        doNothing().when(mContext)
-                .enforceCallingOrSelfPermission(eq(android.Manifest.permission.NETWORK_SETTINGS),
-                        eq("WifiService"));
+        when(mContext.checkPermission(eq(android.Manifest.permission.NETWORK_SETTINGS),
+                anyInt(), anyInt())).thenReturn(PackageManager.PERMISSION_GRANTED);
         // Verbose logging is enabled first in the constructor for WifiServiceImpl, so reset
         // before invocation.
         reset(mClientModeManager);
@@ -5134,9 +5138,10 @@ public class WifiServiceImplTest extends WifiBaseTest {
      */
     @Test(expected = SecurityException.class)
     public void testEnableVerboseLoggingWithNoNetworkSettingsPermission() {
-        doThrow(new SecurityException()).when(mContext)
-                .enforceCallingOrSelfPermission(eq(android.Manifest.permission.NETWORK_SETTINGS),
-                        eq("WifiService"));
+        when(mContext.checkPermission(eq(android.Manifest.permission.NETWORK_SETTINGS),
+                anyInt(), anyInt())).thenReturn(PackageManager.PERMISSION_DENIED);
+        when(mContext.checkPermission(eq(android.Manifest.permission.DUMP),
+                anyInt(), anyInt())).thenReturn(PackageManager.PERMISSION_DENIED);
         // Vebose logging is enabled first in the constructor for WifiServiceImpl, so reset
         // before invocation.
         reset(mClientModeManager);
@@ -8487,18 +8492,25 @@ public class WifiServiceImplTest extends WifiBaseTest {
                 eq(mSuggestionConnectionStatusListener), eq(TEST_PACKAGE_NAME), anyInt());
     }
 
-
     /**
-     * Test to verify that the lock mode is verified before dispatching the operation
+     * Test to verify that the arguments are verified before dispatching the operation
      *
-     * Steps: call acquireWifiLock with an invalid lock mode.
-     * Expected: the call should throw an IllegalArgumentException.
+     * Steps: call acquireWifiLock with invalid arguments.
+     * Expected: the call should throw proper Exception.
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void acquireWifiLockShouldThrowExceptionOnInvalidLockMode() throws Exception {
+    @Test
+    public void acquireWifiLockShouldThrowExceptionOnInvalidArgs() {
         final int wifiLockModeInvalid = -1;
 
-        mWifiServiceImpl.acquireWifiLock(mAppBinder, wifiLockModeInvalid, "", null);
+        // Package name is null.
+        assertThrows(NullPointerException.class,
+                () -> mWifiServiceImpl.acquireWifiLock(mAppBinder,
+                        WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "", null, null, null));
+
+        // Invalid Lock mode.
+        assertThrows(IllegalArgumentException.class,
+                () -> mWifiServiceImpl.acquireWifiLock(mAppBinder, wifiLockModeInvalid, "",
+                        new WorkSource(TEST_UID, TEST_PACKAGE_NAME), TEST_PACKAGE_NAME, null));
     }
 
     private void setupReportActivityInfo() {

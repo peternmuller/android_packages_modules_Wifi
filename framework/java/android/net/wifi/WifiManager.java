@@ -7669,7 +7669,13 @@ public class WifiManager {
             synchronized (mBinder) {
                 if (mRefCounted ? (++mRefCount == 1) : (!mHeld)) {
                     try {
-                        mService.acquireWifiLock(mBinder, mLockType, mTag, mWorkSource);
+                        Bundle extras = new Bundle();
+                        if (SdkLevel.isAtLeastS()) {
+                            extras.putParcelable(EXTRA_PARAM_KEY_ATTRIBUTION_SOURCE,
+                                    mContext.getAttributionSource());
+                        }
+                        mService.acquireWifiLock(mBinder, mLockType, mTag, mWorkSource,
+                                mContext.getOpPackageName(), extras);
                         synchronized (WifiManager.this) {
                             if (mActiveLockCount >= MAX_ACTIVE_LOCKS) {
                                 mService.releaseWifiLock(mBinder);
@@ -7765,7 +7771,13 @@ public class WifiManager {
                 }
                 if (changed && mHeld) {
                     try {
-                        mService.updateWifiLockWorkSource(mBinder, mWorkSource);
+                        Bundle extras = new Bundle();
+                        if (SdkLevel.isAtLeastS()) {
+                            extras.putParcelable(EXTRA_PARAM_KEY_ATTRIBUTION_SOURCE,
+                                    mContext.getAttributionSource());
+                        }
+                        mService.updateWifiLockWorkSource(mBinder, mWorkSource,
+                                mContext.getOpPackageName(), extras);
                     } catch (RemoteException e) {
                         throw e.rethrowFromSystemServer();
                     }
@@ -8215,7 +8227,10 @@ public class WifiManager {
      * @hide
      */
     @SystemApi
-    @RequiresPermission(android.Manifest.permission.NETWORK_SETTINGS)
+    @RequiresPermission(anyOf = {
+            android.Manifest.permission.NETWORK_SETTINGS,
+            android.Manifest.permission.DUMP
+    })
     public void setVerboseLoggingEnabled(boolean enable) {
         enableVerboseLogging(enable ? VERBOSE_LOGGING_LEVEL_ENABLED
                 : VERBOSE_LOGGING_LEVEL_DISABLED);
@@ -8231,7 +8246,10 @@ public class WifiManager {
      * @hide
      */
     @SystemApi
-    @RequiresPermission(android.Manifest.permission.NETWORK_SETTINGS)
+    @RequiresPermission(anyOf = {
+            android.Manifest.permission.NETWORK_SETTINGS,
+            android.Manifest.permission.DUMP
+    })
     public void setVerboseLoggingLevel(@VerboseLoggingLevel int verbose) {
         enableVerboseLogging(verbose);
     }
@@ -8241,7 +8259,10 @@ public class WifiManager {
             maxTargetSdk = Build.VERSION_CODES.Q,
             publicAlternatives = "Use {@code #setVerboseLoggingEnabled(boolean)} instead."
     )
-    @RequiresPermission(android.Manifest.permission.NETWORK_SETTINGS)
+    @RequiresPermission(anyOf = {
+            android.Manifest.permission.NETWORK_SETTINGS,
+            android.Manifest.permission.DUMP
+    })
     public void enableVerboseLogging(@VerboseLoggingLevel int verbose) {
         try {
             mService.enableVerboseLogging(verbose);
