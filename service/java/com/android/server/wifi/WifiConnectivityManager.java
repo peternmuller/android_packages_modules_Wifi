@@ -255,6 +255,8 @@ public class WifiConnectivityManager {
     private long mLatestCandidatesTimestampMs = 0;
     private int[] mCurrentSingleScanScheduleSec;
     private int[] mCurrentSingleScanType;
+    private boolean mPnoScanEnabledByFramework = true;
+    private boolean mEnablePnoScanAfterWifiToggle = true;
 
     private int mCurrentSingleScanScheduleIndex;
     // Cached WifiCandidates used in high mobility state to avoid connecting to APs that are
@@ -2399,8 +2401,32 @@ public class WifiConnectivityManager {
         }
     }
 
+    /**
+     * Enable/disable the PNO scan framework feature.
+     */
+    public void setPnoScanEnabledByFramework(boolean enabled,
+            boolean enablePnoScanAfterWifiToggle) {
+        mEnablePnoScanAfterWifiToggle = enablePnoScanAfterWifiToggle;
+        if (mPnoScanEnabledByFramework == enabled) {
+            return;
+        }
+        mPnoScanEnabledByFramework = enabled;
+        if (enabled) {
+            if (!mScreenOn && mWifiState == WIFI_STATE_DISCONNECTED && !mPnoScanStarted) {
+                startDisconnectedPnoScan();
+            }
+        } else {
+            stopPnoScan();
+        }
+    }
+
     // Start a DisconnectedPNO scan when screen is off and Wifi is disconnected
     private void startDisconnectedPnoScan() {
+        if (!mPnoScanEnabledByFramework) {
+            localLog("Skipping PNO scan because it's disabled by the framework.");
+            return;
+        }
+
         // Initialize PNO settings
         PnoSettings pnoSettings = new PnoSettings();
         List<PnoSettings.PnoNetwork> pnoNetworkList = retrievePnoNetworkList();
@@ -2681,6 +2707,8 @@ public class WifiConnectivityManager {
                 + " mAutoJoinEnabledExternal=" + mAutoJoinEnabledExternal
                 + " mAutoJoinEnabledExternalSetByDeviceAdmin="
                 + mAutoJoinEnabledExternalSetByDeviceAdmin
+                + " mPnoScanEnabledByFramework=" + mPnoScanEnabledByFramework
+                + " mEnablePnoScanAfterWifiToggle=" + mEnablePnoScanAfterWifiToggle
                 + " mSpecificNetworkRequestInProgress=" + mSpecificNetworkRequestInProgress
                 + " mTrustedConnectionAllowed=" + mTrustedConnectionAllowed
                 + " isSufficiencyCheckEnabled=" + mNetworkSelector.isSufficiencyCheckEnabled()
@@ -3343,6 +3371,9 @@ public class WifiConnectivityManager {
             if (mWifiGlobals.flushAnqpCacheOnWifiToggleOffEvent()) {
                 mPasspointManager.clearAnqpRequestsAndFlushCache();
             }
+            if (mEnablePnoScanAfterWifiToggle) {
+                mPnoScanEnabledByFramework = true;
+            }
         }
         mWifiEnabled = enable;
         updateRunningState();
@@ -3419,6 +3450,8 @@ public class WifiConnectivityManager {
         pw.println("Dump of WifiConnectivityManager");
         pw.println("WifiConnectivityManager - Log Begin ----");
         pw.println("mIsLocationModeEnabled: " + mIsLocationModeEnabled);
+        pw.println("mPnoScanEnabledByFramework: " + mPnoScanEnabledByFramework);
+        pw.println("mEnablePnoScanAfterWifiToggle: " + mEnablePnoScanAfterWifiToggle);
         mLocalLog.dump(fd, pw, args);
         pw.println("WifiConnectivityManager - Log End ----");
         pw.println(TAG + ": mMultiInternetConnectionState " + mMultiInternetConnectionState);

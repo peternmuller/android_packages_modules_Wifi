@@ -1895,6 +1895,24 @@ public class WifiServiceImplTest extends WifiBaseTest {
     }
 
     @Test
+    public void testSetPnoScanEnabled() {
+        assertThrows(SecurityException.class,
+                () -> mWifiServiceImpl.setPnoScanEnabled(false, false, TEST_PACKAGE_NAME));
+
+        if (SdkLevel.isAtLeastT()) {
+            when(mWifiPermissionsUtil.checkManageWifiNetworkSelectionPermission(anyInt()))
+                    .thenReturn(true);
+        } else {
+            when(mWifiPermissionsUtil.checkNetworkSettingsPermission(anyInt())).thenReturn(true);
+        }
+        mWifiServiceImpl.setPnoScanEnabled(false, false, TEST_PACKAGE_NAME);
+        verify(mLastCallerInfoManager).put(eq(WifiManager.API_SET_PNO_SCAN_ENABLED),
+                anyInt(), anyInt(), anyInt(), eq(TEST_PACKAGE_NAME), eq(false));
+        mLooper.dispatchAll();
+        verify(mWifiConnectivityManager).setPnoScanEnabledByFramework(false, false);
+    }
+
+    @Test
     public void testSetPulledAtomCallbacks() {
         mWifiServiceImpl.checkAndStartWifi();
         mLooper.dispatchAll();
@@ -8469,18 +8487,25 @@ public class WifiServiceImplTest extends WifiBaseTest {
                 eq(mSuggestionConnectionStatusListener), eq(TEST_PACKAGE_NAME), anyInt());
     }
 
-
     /**
-     * Test to verify that the lock mode is verified before dispatching the operation
+     * Test to verify that the arguments are verified before dispatching the operation
      *
-     * Steps: call acquireWifiLock with an invalid lock mode.
-     * Expected: the call should throw an IllegalArgumentException.
+     * Steps: call acquireWifiLock with invalid arguments.
+     * Expected: the call should throw proper Exception.
      */
-    @Test(expected = IllegalArgumentException.class)
-    public void acquireWifiLockShouldThrowExceptionOnInvalidLockMode() throws Exception {
+    @Test
+    public void acquireWifiLockShouldThrowExceptionOnInvalidArgs() {
         final int wifiLockModeInvalid = -1;
 
-        mWifiServiceImpl.acquireWifiLock(mAppBinder, wifiLockModeInvalid, "", null);
+        // Package name is null.
+        assertThrows(NullPointerException.class,
+                () -> mWifiServiceImpl.acquireWifiLock(mAppBinder,
+                        WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "", null, null, null));
+
+        // Invalid Lock mode.
+        assertThrows(IllegalArgumentException.class,
+                () -> mWifiServiceImpl.acquireWifiLock(mAppBinder, wifiLockModeInvalid, "",
+                        new WorkSource(TEST_UID, TEST_PACKAGE_NAME), TEST_PACKAGE_NAME, null));
     }
 
     private void setupReportActivityInfo() {
