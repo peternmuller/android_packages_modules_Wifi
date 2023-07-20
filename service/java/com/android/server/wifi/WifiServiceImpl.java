@@ -258,7 +258,6 @@ public class WifiServiceImpl extends BaseWifiService {
     private final WifiContext mContext;
     private final FrameworkFacade mFacade;
     private final Clock mClock;
-
     private final PowerManager mPowerManager;
     private final AppOpsManager mAppOps;
     private final UserManager mUserManager;
@@ -376,6 +375,7 @@ public class WifiServiceImpl extends BaseWifiService {
 
     private WifiNetworkSelectionConfig mNetworkSelectionConfig;
     private ApplicationQosPolicyRequestHandler mApplicationQosPolicyRequestHandler;
+    private final AfcManager mAfcManager;
 
     /**
      * The wrapper of SoftApCallback is used in WifiService internally.
@@ -553,6 +553,7 @@ public class WifiServiceImpl extends BaseWifiService {
         mDeviceConfigFacade = mWifiInjector.getDeviceConfigFacade();
         mApplicationQosPolicyRequestHandler = mWifiInjector.getApplicationQosPolicyRequestHandler();
         mWifiPulledAtomLogger = mWifiInjector.getWifiPulledAtomLogger();
+        mAfcManager = mWifiInjector.getAfcManager();
     }
 
     /**
@@ -715,7 +716,6 @@ public class WifiServiceImpl extends BaseWifiService {
         mIsLocationModeEnabled = mWifiPermissionsUtil.isLocationModeEnabled();
         mWifiConnectivityManager.setLocationModeEnabled(mIsLocationModeEnabled);
     }
-
 
     /**
      * Find which user restrictions have changed and take corresponding actions
@@ -1930,6 +1930,7 @@ public class WifiServiceImpl extends BaseWifiService {
                     }
                     mRegisteredDriverCountryCodeListeners.finishBroadcast();
                 }
+                mAfcManager.onCountryCodeChange(countryCode);
             });
         }
     }
@@ -5205,13 +5206,11 @@ public class WifiServiceImpl extends BaseWifiService {
                 err.getFileDescriptor(), args);
     }
 
+
     private void updateWifiMetrics() {
-        mWifiThreadRunner.run(() -> {
-            mWifiMetrics.updateSavedNetworks(
-                    mWifiConfigManager.getSavedNetworks(WIFI_UID));
-            mActiveModeWarden.updateMetrics();
-            mPasspointManager.updateMetrics();
-        });
+        mWifiMetrics.updateSavedNetworks(mWifiConfigManager.getSavedNetworks(WIFI_UID));
+        mActiveModeWarden.updateMetrics();
+        mPasspointManager.updateMetrics();
         boolean isNonPersistentMacRandEnabled = mFrameworkFacade.getIntegerSetting(mContext,
                 WifiConfigManager.NON_PERSISTENT_MAC_RANDOMIZATION_FEATURE_FORCE_ENABLE_FLAG, 0)
                 == 1 ? true : false;
