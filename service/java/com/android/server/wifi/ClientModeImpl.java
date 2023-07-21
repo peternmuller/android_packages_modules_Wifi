@@ -6156,6 +6156,14 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
 
         @Override
         public void enterImpl() {
+            final WifiConfiguration config = getConnectedWifiConfigurationInternal();
+            if (config == null) {
+                logw("Connected to a network that's already been removed " + mLastNetworkId
+                        + ", disconnecting...");
+                sendMessage(CMD_DISCONNECT, StaEvent.DISCONNECT_UNKNOWN_NETWORK);
+                return;
+            }
+
             mRssiPollToken++;
             if (mEnableRssiPolling) {
                 if (isPrimary()) {
@@ -6164,11 +6172,8 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
                 sendMessage(CMD_RSSI_POLL, mRssiPollToken, 0);
             }
             sendNetworkChangeBroadcast(DetailedState.CONNECTING);
-
             // If this network was explicitly selected by the user, evaluate whether to inform
             // ConnectivityService of that fact so the system can treat it appropriately.
-            final WifiConfiguration config = getConnectedWifiConfigurationInternal();
-
             final NetworkAgentConfig naConfig = getNetworkAgentConfigInternal(config);
             final NetworkCapabilities nc = getCapabilities(
                     getConnectedWifiConfigurationInternal(), getConnectedBssidInternal());
@@ -6274,8 +6279,8 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
                         mWifiNative.disconnect(mInterfaceName);
                     } else {
                         handleSuccessfulIpConfiguration();
-                        sendConnectedState();
                         transitionTo(mL3ConnectedState);
+                        sendConnectedState();
                     }
                     break;
                 }
@@ -6893,7 +6898,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
                                 WifiMetrics.ConnectionEvent.FAILURE_ROAM_TIMEOUT,
                                 WifiMetricsProto.ConnectionEvent.HLF_NONE,
                                 WifiMetricsProto.ConnectionEvent.FAILURE_REASON_UNKNOWN,
-                                mWifiInfo.getFrequency(), -1);
+                                mWifiInfo.getFrequency(), 0);
                         mRoamFailCount++;
                         handleNetworkDisconnect(false,
                                 WifiStatsLog.WIFI_DISCONNECT_REPORTED__FAILURE_CODE__ROAM_WATCHDOG_TIMER);
