@@ -3661,6 +3661,8 @@ public class ClientModeImplTest extends WifiBaseTest {
         llStats.rxmpdu_bk = 2000;
         WifiSignalPollResults signalPollResults = new WifiSignalPollResults();
         signalPollResults.addEntry(0, -42, 65, 54, sFreq);
+        when(mWifiNative.getSupportedFeatureSet(WIFI_IFACE_NAME)).thenReturn(
+                WifiManager.WIFI_FEATURE_LINK_LAYER_STATS);
         when(mWifiNative.getWifiLinkLayerStats(any())).thenReturn(llStats);
         when(mWifiNative.signalPoll(any())).thenReturn(signalPollResults);
         when(mClock.getWallClockMillis()).thenReturn(startMillis + 0);
@@ -3716,6 +3718,8 @@ public class ClientModeImplTest extends WifiBaseTest {
         WifiLinkLayerStats llStats = new WifiLinkLayerStats();
         WifiSignalPollResults signalPollResults = new WifiSignalPollResults();
         signalPollResults.addEntry(0, -42, 65, 54, sFreq);
+        when(mWifiNative.getSupportedFeatureSet(WIFI_IFACE_NAME)).thenReturn(
+                WifiManager.WIFI_FEATURE_LINK_LAYER_STATS);
         when(mWifiNative.getWifiLinkLayerStats(any())).thenReturn(llStats);
         when(mWifiNative.signalPoll(any())).thenReturn(signalPollResults);
         when(mClock.getWallClockMillis()).thenReturn(startMillis + 0);
@@ -4255,6 +4259,8 @@ public class ClientModeImplTest extends WifiBaseTest {
         llStats.rxmpdu_bk = 2000;
         WifiSignalPollResults signalPollResults = new WifiSignalPollResults();
         signalPollResults.addEntry(0, TEST_RSSI, 65, 54, sFreq);
+        when(mWifiNative.getSupportedFeatureSet(WIFI_IFACE_NAME)).thenReturn(
+                WifiManager.WIFI_FEATURE_LINK_LAYER_STATS);
         when(mWifiNative.getWifiLinkLayerStats(any())).thenReturn(llStats);
         when(mWifiNative.signalPoll(any())).thenReturn(signalPollResults);
 
@@ -4280,6 +4286,8 @@ public class ClientModeImplTest extends WifiBaseTest {
         llStats.rxmpdu_bk = 2000;
         WifiSignalPollResults signalPollResults = new WifiSignalPollResults();
         signalPollResults.addEntry(0, TEST_RSSI, 65, 54, sFreq);
+        when(mWifiNative.getSupportedFeatureSet(WIFI_IFACE_NAME)).thenReturn(
+                WifiManager.WIFI_FEATURE_LINK_LAYER_STATS);
         when(mWifiNative.getWifiLinkLayerStats(any())).thenReturn(llStats);
         when(mWifiNative.signalPoll(any())).thenReturn(signalPollResults);
 
@@ -4998,6 +5006,8 @@ public class ClientModeImplTest extends WifiBaseTest {
         llStats.rxmpdu_bk = 2000;
         WifiSignalPollResults signalPollResults = new WifiSignalPollResults();
         signalPollResults.addEntry(0, RSSI_THRESHOLD_BREACH_MIN, 65, 54, sFreq);
+        when(mWifiNative.getSupportedFeatureSet(WIFI_IFACE_NAME)).thenReturn(
+                WifiManager.WIFI_FEATURE_LINK_LAYER_STATS);
         when(mWifiNative.getWifiLinkLayerStats(any())).thenReturn(llStats);
         when(mWifiNative.signalPoll(any())).thenReturn(signalPollResults);
 
@@ -5585,6 +5595,8 @@ public class ClientModeImplTest extends WifiBaseTest {
         connect();
 
         failOnRssiChangeBroadcast();
+        when(mWifiNative.getSupportedFeatureSet(WIFI_IFACE_NAME)).thenReturn(
+                WifiManager.WIFI_FEATURE_LINK_LAYER_STATS);
         WifiLinkLayerStats oldLLStats = new WifiLinkLayerStats();
         when(mWifiNative.getWifiLinkLayerStats(any())).thenReturn(oldLLStats);
         mCmi.sendMessage(ClientModeImpl.CMD_RSSI_POLL, 1);
@@ -5610,6 +5622,8 @@ public class ClientModeImplTest extends WifiBaseTest {
         connect();
 
         failOnRssiChangeBroadcast();
+        when(mWifiNative.getSupportedFeatureSet(WIFI_IFACE_NAME)).thenReturn(
+                WifiManager.WIFI_FEATURE_LINK_LAYER_STATS);
         WifiLinkLayerStats stats = new WifiLinkLayerStats();
         when(mWifiNative.getWifiLinkLayerStats(any())).thenReturn(stats);
         when(mWifiDataStall.checkDataStallAndThroughputSufficiency(any(),
@@ -7220,6 +7234,59 @@ public class ClientModeImplTest extends WifiBaseTest {
         verify(mWifiNative).disconnect(WIFI_IFACE_NAME);
     }
 
+    private void runProvisioningFailureCalledAfterReachabilityFailureTest(int lossReason)
+            throws Exception {
+        assumeTrue(SdkLevel.isAtLeastT());
+        connect();
+        expectRegisterNetworkAgent((agentConfig) -> { }, (cap) -> { });
+        reset(mWifiNetworkAgent);
+
+        // Save current IpClientCallbacks instance and verify an immediate IP provisioning
+        // failure event from this instance after IP reachability failure still triggers a
+        // WiFi disconnection due to the race, for example:
+        // - IpClient sends onReachabilityFailure callback, wifi module receives this callback
+        //   and post CMD_IP_REACHABILITY_FAILURE, return;
+        // - IpClient sends onProvisioningFailure callback, wifi module receives this callback
+        //   and post CMD_IP_CONFIGURATION_LOST, return;
+        // - state machine processes CMD_IP_REACHABILITY_FAILURE first and eventually transition
+        //   to WaitBeforeL3ProvisioningState and recreate an IpClient instance there.
+        // - state machine receives CMD_IP_CONFIGURATION_LOST from the old IpClientCallbacks
+        //   instanceat at WaitBeforeL3ProvisioningState, but defer the command to its parent state
+        //   until transition to L3ProvisioningState.
+        // - CMD_IP_CONFIGURATION_LOST is processed at L2ConnectedState eventually, and trigger
+        //   WiFi disconnection there.
+        final IpClientCallbacks callback = mIpClientCallback;
+        final ReachabilityLossInfoParcelable lossInfo =
+                new ReachabilityLossInfoParcelable("", lossReason);
+        callback.onReachabilityFailure(lossInfo);
+        callback.onProvisioningFailure(new LinkProperties());
+        mLooper.dispatchAll();
+        verify(mWifiNetworkAgent).unregisterAfterReplacement(anyInt());
+        verify(mWifiNative).disconnect(WIFI_IFACE_NAME);
+    }
+
+    @Test
+    public void testProvisioningFailureCalledAfterReachabilityFailure_postRoam()
+            throws Exception {
+        runProvisioningFailureCalledAfterReachabilityFailureTest(ReachabilityLossReason.ROAM);
+    }
+
+    @Test
+    public void testProvisioningFailureCalledAfterReachabilityFailure_rssiConfirm()
+            throws Exception {
+        when(mDeviceConfigFacade.isHandleRssiOrganicKernelFailuresEnabled()).thenReturn(true);
+
+        runProvisioningFailureCalledAfterReachabilityFailureTest(ReachabilityLossReason.CONFIRM);
+    }
+
+    @Test
+    public void testProvisioningFailureCalledAfterReachabilityFailure_organicKernel()
+            throws Exception {
+        when(mDeviceConfigFacade.isHandleRssiOrganicKernelFailuresEnabled()).thenReturn(true);
+
+        runProvisioningFailureCalledAfterReachabilityFailureTest(ReachabilityLossReason.ORGANIC);
+    }
+
     @Test
     public void testIpReachabilityLostAndRoamEventsRace() throws Exception {
         connect();
@@ -7333,6 +7400,8 @@ public class ClientModeImplTest extends WifiBaseTest {
      */
     @Test
     public void testWifiScoreReportDump() throws Exception {
+        when(mWifiNative.getSupportedFeatureSet(WIFI_IFACE_NAME)).thenReturn(
+                WifiManager.WIFI_FEATURE_LINK_LAYER_STATS);
         InOrder inOrder = inOrder(mWifiNative, mWifiScoreReport);
         inOrder.verify(mWifiNative, never()).getWifiLinkLayerStats(any());
         connect();
@@ -8335,6 +8404,8 @@ public class ClientModeImplTest extends WifiBaseTest {
         connect();
         clearInvocations(mWifiNative, mWifiMetrics, mWifiDataStall);
 
+        when(mWifiNative.getSupportedFeatureSet(WIFI_IFACE_NAME)).thenReturn(
+                WifiManager.WIFI_FEATURE_LINK_LAYER_STATS);
         WifiLinkLayerStats oldLLStats = new WifiLinkLayerStats();
         when(mWifiNative.getWifiLinkLayerStats(any())).thenReturn(oldLLStats);
         mLooper.moveTimeForward(mWifiGlobals.getPollRssiIntervalMillis());
@@ -8377,6 +8448,8 @@ public class ClientModeImplTest extends WifiBaseTest {
 
         verifyNoMoreInteractions(mWifiNative, mWifiMetrics, mWifiDataStall);
 
+        when(mWifiNative.getSupportedFeatureSet(WIFI_IFACE_NAME)).thenReturn(
+                WifiManager.WIFI_FEATURE_LINK_LAYER_STATS);
         when(mWifiNative.getWifiLinkLayerStats(any())).thenReturn(new WifiLinkLayerStats());
 
         // No link layer stats collection on secondary CMM.
@@ -8394,6 +8467,8 @@ public class ClientModeImplTest extends WifiBaseTest {
         connect();
         clearInvocations(mWifiNative, mWifiMetrics, mWifiDataStall);
 
+        when(mWifiNative.getSupportedFeatureSet(WIFI_IFACE_NAME)).thenReturn(
+                WifiManager.WIFI_FEATURE_LINK_LAYER_STATS);
         when(mWifiNative.getWifiLinkLayerStats(any())).thenReturn(new WifiLinkLayerStats());
 
         // No link layer stats collection on secondary CMM.
@@ -8425,6 +8500,8 @@ public class ClientModeImplTest extends WifiBaseTest {
         clearInvocations(mWifiNative, mWifiMetrics, mWifiDataStall);
 
         // RSSI polling is enabled on primary.
+        when(mWifiNative.getSupportedFeatureSet(WIFI_IFACE_NAME)).thenReturn(
+                WifiManager.WIFI_FEATURE_LINK_LAYER_STATS);
         WifiLinkLayerStats oldLLStats = new WifiLinkLayerStats();
         when(mWifiNative.getWifiLinkLayerStats(any())).thenReturn(oldLLStats);
         mLooper.moveTimeForward(mWifiGlobals.getPollRssiIntervalMillis());
@@ -8445,6 +8522,23 @@ public class ClientModeImplTest extends WifiBaseTest {
         mLooper.dispatchAll();
 
         verifyNoMoreInteractions(mWifiNative, mWifiMetrics, mWifiDataStall);
+    }
+
+    @Test
+    public void verifyRssiPollWhenLinkLayerStatsIsNotSupported() throws Exception {
+        setScreenState(true);
+        connect();
+        clearInvocations(mWifiNative, mWifiMetrics, mWifiDataStall);
+
+        when(mWifiNative.getSupportedFeatureSet(WIFI_IFACE_NAME)).thenReturn(0L);
+        WifiLinkLayerStats stats = new WifiLinkLayerStats();
+        when(mWifiNative.getWifiLinkLayerStats(any())).thenReturn(stats);
+        mLooper.moveTimeForward(mWifiGlobals.getPollRssiIntervalMillis());
+        mLooper.dispatchAll();
+        verify(mWifiNative, never()).getWifiLinkLayerStats(any());
+        verify(mWifiDataStall).checkDataStallAndThroughputSufficiency(WIFI_IFACE_NAME,
+                mConnectionCapabilities, null, null, mWifiInfo, TEST_TX_BYTES, TEST_RX_BYTES);
+        verify(mWifiMetrics).incrementWifiLinkLayerUsageStats(WIFI_IFACE_NAME, null);
     }
 
     @Test
