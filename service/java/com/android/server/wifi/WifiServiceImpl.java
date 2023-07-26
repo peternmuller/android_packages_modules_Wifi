@@ -5368,14 +5368,14 @@ public class WifiServiceImpl extends BaseWifiService {
     @Override
     public void acquireMulticastLock(IBinder binder, String tag) {
         enforceMulticastChangePermission();
-        mLog.info("acquireMulticastLock uid=%").c(Binder.getCallingUid()).flush();
+        mLog.info("acquireMulticastLock uid=% tag=%").c(Binder.getCallingUid()).c(tag).flush();
         mWifiMulticastLockManager.acquireLock(binder, tag);
     }
 
     @Override
     public void releaseMulticastLock(String tag) {
         enforceMulticastChangePermission();
-        mLog.info("releaseMulticastLock uid=%").c(Binder.getCallingUid()).flush();
+        mLog.info("releaseMulticastLock uid=% tag=%").c(Binder.getCallingUid()).c(tag).flush();
         mWifiMulticastLockManager.releaseLock(tag);
     }
 
@@ -7865,5 +7865,29 @@ public class WifiServiceImpl extends BaseWifiService {
                 Log.e(TAG, e.getMessage());
             }
         });
+    }
+
+    /**
+     * Set the mock wifi service for testing
+     */
+    public void setMockWifiService(String serviceName) {
+        int uid = Binder.getCallingUid();
+        if (!mWifiPermissionsUtil.checkNetworkSettingsPermission(uid)) {
+            throw new SecurityException(TAG + " Uid " + uid
+                    + " Missing NETWORK_SETTINGS permission");
+        }
+        mWifiNative.setMockWifiService(serviceName);
+    }
+
+    /**
+     * Set the mock wifi methods for testing
+     */
+    public boolean setMockWifiMethods(String methods) {
+        int uid = Binder.getCallingUid();
+        if (!mWifiPermissionsUtil.checkNetworkSettingsPermission(uid)) {
+            throw new SecurityException(TAG + " Uid " + uid
+                    + " Missing NETWORK_SETTINGS permission");
+        }
+        return mWifiNative.setMockWifiMethods(methods);
     }
 }
