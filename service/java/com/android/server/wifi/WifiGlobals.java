@@ -19,6 +19,7 @@ package com.android.server.wifi;
 import android.annotation.Nullable;
 import android.content.Context;
 import android.net.wifi.WifiConfiguration;
+import android.net.wifi.WifiManager;
 import android.util.ArraySet;
 
 import com.android.modules.utils.build.SdkLevel;
@@ -26,6 +27,10 @@ import com.android.wifi.resources.R;
 
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -68,11 +73,12 @@ public class WifiGlobals {
     private final boolean mIsWpaPersonalDeprecated;
     // This is read from the overlay, cache it after boot up.
     private final boolean mIsDisconnectOnlyOnInitialIpReachability;
-
+    private final Map<String, List<String>> mCountryCodeToAfcServers;
     // This is set by WifiManager#setVerboseLoggingEnabled(int).
-    private boolean mIsShowKeyVerboseLoggingModeEnabled = false;
+    private int mVerboseLoggingLevel = WifiManager.VERBOSE_LOGGING_LEVEL_DISABLED;
     private boolean mIsUsingExternalScorer = false;
     private boolean mDisableUnwantedNetworkOnLowRssi = false;
+    private final boolean mIsAfcSupportedOnDevice;
     private Set<String> mMacRandomizationUnsupportedSsidPrefixes = new ArraySet<>();
 
     public WifiGlobals(Context context) {
@@ -128,8 +134,12 @@ public class WifiGlobals {
                 .getBoolean(R.bool.config_wifiWepDeprecated);
         mIsWpaPersonalDeprecated = mContext.getResources()
                 .getBoolean(R.bool.config_wifiWpaPersonalDeprecated);
+        mIsAfcSupportedOnDevice = mContext.getResources().getBoolean(R.bool.config_wifiAfcSupported)
+                && mContext.getResources().getBoolean(R.bool.config_wifiSoftap6ghzSupported)
+                && mContext.getResources().getBoolean(R.bool.config_wifi6ghzSupport);
         Set<String> unsupportedSsidPrefixes = new ArraySet<>(mContext.getResources().getStringArray(
                 R.array.config_wifiForceDisableMacRandomizationSsidPrefixList));
+        mCountryCodeToAfcServers = getCountryCodeToAfcServersMap();
         if (!unsupportedSsidPrefixes.isEmpty()) {
             for (String ssid : unsupportedSsidPrefixes) {
                 String cleanedSsid = ssid.length() > 1 && (ssid.charAt(0) == '"')
@@ -138,6 +148,29 @@ public class WifiGlobals {
                 mMacRandomizationUnsupportedSsidPrefixes.add(cleanedSsid);
             }
         }
+    }
+
+    private Map<String, List<String>> getCountryCodeToAfcServersMap() {
+        Map<String, List<String>> countryCodeToAfcServers = new HashMap<>();
+        String[] countryCodeToAfcServersFromConfig = mContext.getResources().getStringArray(
+                R.array.config_wifiAfcServerUrlsForCountry);
+
+        if (countryCodeToAfcServersFromConfig == null) {
+            return countryCodeToAfcServers;
+        }
+
+        // each entry should be of the form: countryCode,url1,url2...
+        for (String entry : countryCodeToAfcServersFromConfig) {
+            String[] countryAndUrls = entry.split(",");
+
+            // if no servers are specified for a country, then continue to the next entry
+            if (countryAndUrls.length < 2) {
+                continue;
+            }
+            countryCodeToAfcServers.put(countryAndUrls[0], Arrays.asList(Arrays.copyOfRange(
+                    countryAndUrls, 1, countryAndUrls.length)));
+        }
+        return countryCodeToAfcServers;
     }
 
     public Set<String> getMacRandomizationUnsupportedSsidPrefixes() {
@@ -157,6 +190,21 @@ public class WifiGlobals {
     /** Returns whether CMD_IP_REACHABILITY_LOST events should trigger disconnects. */
     public boolean getIpReachabilityDisconnectEnabled() {
         return mIpReachabilityDisconnectEnabled.get();
+    }
+
+    /**
+     * Returns a list of AFC server URLs for a country, or null if AFC is not available in that
+     * country.
+     */
+    public @Nullable List<String> getAfcServerUrlsForCountry(String countryCode) {
+        return mCountryCodeToAfcServers.get(countryCode);
+    }
+
+    /**
+     * Returns whether this device supports AFC.
+     */
+    public boolean isAfcSupportedOnDevice() {
+        return mIsAfcSupportedOnDevice;
     }
 
     /** Sets whether CMD_IP_REACHABILITY_LOST events should trigger disconnects. */
@@ -276,14 +324,21 @@ public class WifiGlobals {
         return mIsWpa3SaeH2eSupported;
     }
 
-    /** Set if show key verbose logging mode is enabled. */
-    public void setShowKeyVerboseLoggingModeEnabled(boolean enable) {
-        mIsShowKeyVerboseLoggingModeEnabled = enable;
+    /**
+     * Record the verbose logging level
+     */
+    public void setVerboseLoggingLevel(int level) {
+        mVerboseLoggingLevel = level;
+    }
+
+    /** Return the currently set verbose logging level. */
+    public int getVerboseLoggingLevel() {
+        return mVerboseLoggingLevel;
     }
 
     /** Check if show key verbose logging mode is enabled. */
     public boolean getShowKeyVerboseLoggingModeEnabled() {
-        return mIsShowKeyVerboseLoggingModeEnabled;
+        return mVerboseLoggingLevel == WifiManager.VERBOSE_LOGGING_LEVEL_ENABLED_SHOW_KEY;
     }
 
     /** Set whether the external scorer is being used **/

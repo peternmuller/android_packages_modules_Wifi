@@ -1999,4 +1999,12 @@ public class WifiVendorHal {
             return mHalDeviceManager.getSupportedBandCombinations(iface);
         }
     }
+
+    /**
+     * See {@link WifiNative#setAfcChannelAllowance(WifiChip.AfcChannelAllowance)}
+     */
+    public boolean setAfcChannelAllowance(WifiChip.AfcChannelAllowance afcChannelAllowance) {
+        if (mWifiChip == null) return false;
+        return mWifiChip.setAfcChannelAllowance(afcChannelAllowance);
+    }
 }

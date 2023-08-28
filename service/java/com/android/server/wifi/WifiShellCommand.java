@@ -40,6 +40,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.hardware.display.DisplayManager;
+import android.location.Location;
+import android.location.LocationManager;
 import android.net.ConnectivityManager;
 import android.net.MacAddress;
 import android.net.Network;
@@ -101,6 +103,7 @@ import com.android.modules.utils.build.SdkLevel;
 import com.android.server.wifi.ClientMode.LinkProbeCallback;
 import com.android.server.wifi.coex.CoexManager;
 import com.android.server.wifi.coex.CoexUtils;
+import com.android.server.wifi.hal.WifiChip;
 import com.android.server.wifi.hotspot2.NetworkDetail;
 import com.android.server.wifi.util.ApConfigUtil;
 import com.android.server.wifi.util.ArrayUtils;
@@ -115,6 +118,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -172,6 +176,9 @@ public class WifiShellCommand extends BasicShellCommandHandler {
             "get-ipreach-disconnect",
             "take-bugreport",
             "get-allowed-channel",
+            "set-mock-wifimodem-service",
+            "get-mock-wifimodem-service",
+            "set-mock-wifimodem-methods",
     };
 
     private static final Map<String, Pair<NetworkRequest, ConnectivityManager.NetworkCallback>>
@@ -202,6 +209,7 @@ public class WifiShellCommand extends BasicShellCommandHandler {
     private final SsidTranslator mSsidTranslator;
     private final WifiDiagnostics mWifiDiagnostics;
     private final DeviceConfigFacade mDeviceConfig;
+    private final AfcManager mAfcManager;
     private static final int[] OP_MODE_LIST = {
             WifiAvailableChannel.OP_MODE_STA,
             WifiAvailableChannel.OP_MODE_SAP,
@@ -405,6 +413,7 @@ public class WifiShellCommand extends BasicShellCommandHandler {
                     + " targetNetworkId=" + targetNetworkId
                     + " targetBssid=" + targetBssid);
         }
+
         @Override
         public void onNetworkSwitchRejected(
                 int sessionId, int targetNetworkId, String targetBssid) {
@@ -449,6 +458,7 @@ public class WifiShellCommand extends BasicShellCommandHandler {
         mSsidTranslator = wifiInjector.getSsidTranslator();
         mWifiDiagnostics = wifiInjector.getWifiDiagnostics();
         mDeviceConfig = wifiInjector.getDeviceConfigFacade();
+        mAfcManager = wifiInjector.getAfcManager();
     }
 
     private String getOpModeName(@WifiAvailableChannel.OpMode int mode) {
@@ -1804,6 +1814,199 @@ public class WifiShellCommand extends BasicShellCommandHandler {
                     }
                     return 0;
                 }
+                case "trigger-afc-location-update":
+                    Double longitude = Double.parseDouble(getNextArgRequired());
+                    Double latitude = Double.parseDouble(getNextArgRequired());
+                    Double height = Double.parseDouble(getNextArgRequired());
+                    Location location = new Location(LocationManager.FUSED_PROVIDER);
+                    location.setLongitude(longitude);
+                    location.setLatitude(latitude);
+                    location.setAltitude(height);
+                    mWifiThreadRunner.post(() -> mAfcManager.onLocationChange(location, true));
+                    pw.println("The updated location with longitude of " + longitude + " degrees, "
+                            + "latitude of " + latitude + " degrees, and height of " + height
+                            + " meters was passed into the Afc Manager onLocationChange method.");
+                    return 0;
+                case "set-afc-channel-allowance": {
+                    WifiChip.AfcChannelAllowance afcChannelAllowance =
+                            new WifiChip.AfcChannelAllowance();
+                    boolean expiryTimeArgumentIncluded = false;
+                    boolean frequencyOrChannelArgumentIncluded = false;
+                    afcChannelAllowance.availableAfcFrequencyInfos = new ArrayList<>();
+                    afcChannelAllowance.availableAfcChannelInfos = new ArrayList<>();
+
+                    String option;
+                    while ((option = getNextOption()) != null) {
+                        switch (option) {
+                            case "-e": {
+                                int secondsUntilExpiry = Integer.parseInt(getNextArgRequired());
+                                // AfcChannelAllowance requires this field to be a UNIX timestamp
+                                // in milliseconds.
+                                afcChannelAllowance.availabilityExpireTimeMs =
+                                        System.currentTimeMillis() + secondsUntilExpiry * 1000;
+                                expiryTimeArgumentIncluded = true;
+
+                                break;
+                            }
+                            case "-f": {
+                                frequencyOrChannelArgumentIncluded = true;
+                                String frequenciesInput = getNextArgRequired();
+
+                                if (frequenciesInput.equals(("none"))) {
+                                    break;
+                                }
+
+                                // parse frequency list, and add it to the AfcChannelAllowance
+                                String[] unparsedFrequencies = frequenciesInput.split(":");
+                                afcChannelAllowance.availableAfcFrequencyInfos = new ArrayList<>();
+
+                                for (int i = 0; i < unparsedFrequencies.length; ++i) {
+                                    String[] frequencyPieces = unparsedFrequencies[i].split(",");
+
+                                    if (frequencyPieces.length != 3) {
+                                        throw new IllegalArgumentException("Each frequency in the "
+                                                + "available frequency list should have 3 values, "
+                                                + "but found one with " + frequencyPieces.length);
+                                    }
+
+                                    WifiChip.AvailableAfcFrequencyInfo frequencyInfo = new
+                                            WifiChip.AvailableAfcFrequencyInfo();
+
+                                    frequencyInfo.startFrequencyMhz =
+                                            Integer.parseInt(frequencyPieces[0]);
+                                    frequencyInfo.endFrequencyMhz =
+                                            Integer.parseInt(frequencyPieces[1]);
+                                    frequencyInfo.maxPsdDbmPerMhz =
+                                            Integer.parseInt(frequencyPieces[2]);
+
+                                    afcChannelAllowance.availableAfcFrequencyInfos
+                                                    .add(frequencyInfo);
+                                }
+
+                                break;
+                            }
+                            case "-c": {
+                                frequencyOrChannelArgumentIncluded = true;
+                                String channelsInput = getNextArgRequired();
+
+                                if (channelsInput.equals("none")) {
+                                    break;
+                                }
+
+                                // parse channel list, and add it to the AfcChannelAllowance
+                                String[] unparsedChannels = channelsInput.split(":");
+                                afcChannelAllowance.availableAfcChannelInfos = new ArrayList<>();
+
+                                for (int i = 0; i < unparsedChannels.length; ++i) {
+                                    String[] channelPieces = unparsedChannels[i].split(",");
+
+                                    if (channelPieces.length != 3) {
+                                        throw new IllegalArgumentException("Each channel in the "
+                                                + "available channel list should have 3 values, "
+                                                + "but found one with " + channelPieces.length);
+                                    }
+
+                                    WifiChip.AvailableAfcChannelInfo channelInfo = new
+                                            WifiChip.AvailableAfcChannelInfo();
+
+                                    channelInfo.globalOperatingClass =
+                                            Integer.parseInt(channelPieces[0]);
+                                    channelInfo.channelCfi = Integer.parseInt(channelPieces[1]);
+                                    channelInfo.maxEirpDbm = Integer.parseInt(channelPieces[2]);
+
+                                    afcChannelAllowance.availableAfcChannelInfos.add(channelInfo);
+                                }
+
+                                break;
+                            }
+                            default: {
+                                pw.println("Unrecognized command line argument.");
+                                return -1;
+                            }
+                        }
+                    }
+                    if (!expiryTimeArgumentIncluded) {
+                        pw.println("Please include the -e flag to set the seconds until the "
+                                + "availability expires.");
+                        return -1;
+                    }
+                    if (!frequencyOrChannelArgumentIncluded) {
+                        pw.println("Please include at least one of the -f or -c flags to set the "
+                                + "frequency or channel availability.");
+                        return -1;
+                    }
+
+                    ArrayBlockingQueue<String> queue = new ArrayBlockingQueue<>(1);
+                    mWifiThreadRunner.post(() -> {
+                        if (mWifiNative.setAfcChannelAllowance(afcChannelAllowance)) {
+                            queue.offer("Successfully set the allowed AFC channels and "
+                                    + "frequencies.");
+                        } else {
+                            queue.offer("Setting the allowed AFC channels and frequencies "
+                                    + "failed.");
+                        }
+                    });
+
+                    // block until msg is received, or timed out
+                    String msg = queue.poll(3000, TimeUnit.MILLISECONDS);
+                    if (msg == null) {
+                        pw.println("Setting the allowed AFC channels and frequencies timed out.");
+                    } else {
+                        pw.println(msg);
+                    }
+
+                    return 0;
+                }
+                case "configure-afc-server":
+                    final String url = getNextArgRequired();
+
+                    if (!url.startsWith("http")) {
+                        pw.println("The required URL first argument is not a valid server URL for"
+                                + " a HTTP request.");
+                        return -1;
+                    }
+
+                    String secondOption = getNextOption();
+                    Map<String, String> requestProperties = new HashMap<>();
+                    if (secondOption != null && secondOption.equals("-r")) {
+
+                        String key = getNextArg();
+                        while (key != null) {
+
+                            String value = getNextArg();
+                            // Check if there is a next value
+                            if (value != null) {
+                                requestProperties.put(key, value);
+                            } else {
+                                // Fail to proceed as there is no value given for the corresponding
+                                // key
+                                pw.println(
+                                        "No value provided for the corresponding key " + key
+                                                + ". There must be an even number of request"
+                                                + " property arguments provided after the -r "
+                                                + "option.");
+                                return -1;
+                            }
+                            key = getNextArg();
+                        }
+
+                    } else {
+                        pw.println("No -r option was provided as second argument so the HTTP "
+                                + "request will have no request properties.");
+                    }
+
+                    mWifiThreadRunner.post(() -> {
+                        mAfcManager.setServerUrlAndRequestPropertyPairs(url, requestProperties);
+                    });
+
+                    pw.println("The URL is set to " + url);
+                    pw.println("The request properties are set to: ");
+
+                    for (Map.Entry<String, String> requestProperty : requestProperties.entrySet()) {
+                        pw.println("Key: " + requestProperty.getKey() + ", Value: "
+                                + requestProperty.getValue());
+                    }
+                    return 0;
                 case "set-mock-wifimodem-service":
                     String opt = null;
                     String serviceName = null;
@@ -1818,7 +2021,7 @@ public class WifiShellCommand extends BasicShellCommandHandler {
                                 return -1;
                         }
                     }
-                    mWifiNative.setMockWifiService(serviceName);
+                    mWifiService.setMockWifiService(serviceName);
                     // The result will be checked, must print result "true"
                     pw.print("true");
                     return 0;
@@ -1827,7 +2030,7 @@ public class WifiShellCommand extends BasicShellCommandHandler {
                     return 0;
                 case "set-mock-wifimodem-methods":
                     String methods = getNextArgRequired();
-                    if (mWifiNative.setMockWifiMethods(methods)) {
+                    if (mWifiService.setMockWifiMethods(methods)) {
                         pw.print("true");
                     } else {
                         pw.print("fail to set mock method: " + methods);
@@ -2855,6 +3058,38 @@ public class WifiShellCommand extends BasicShellCommandHandler {
         pw.println("    Clears the SSID translation charsets set in set-ssid-charset.");
         pw.println("  get-last-caller-info api_type");
         pw.println("    Get the last caller information for a WifiManager.ApiType");
+        pw.println("  trigger-afc-location-update <longitude> <latitude> <height>");
+        pw.println("    Passes in longitude, latitude, and height values as arguments of type "
+                + "double for a fake location update to trigger framework logic to query the AFC "
+                + "server. The longitude and latitude pair is in decimal degrees and the height"
+                + " is the altitude in meters. The server URL needs to have been previously set "
+                + "with the configure-afc-server shell command.");
+        pw.println("    Example: trigger-afc-location-update 37.425056 -122.984157 3.043");
+        pw.println("  set-afc-channel-allowance -e <secs_until_expiry> [-f <low_freq>,<high_freq>,"
+                + "<psd>:...|none] [-c <operating_class>,<channel_cfi>,<max_eirp>:...|none]");
+        pw.println("    Sets the allowed AFC channels and frequencies.");
+        pw.println("    -e - Seconds until the availability expires.");
+        pw.println("    -f - Colon-separated list of available frequency info.");
+        pw.println("      Note: each frequency should contain 3 comma separated values, where "
+                + "the first is the low frequency (MHz), the second the high frequency (MHz), the "
+                + "third the max PSD (dBm per MHz). To set an empty frequency list, enter \"none\" "
+                + "in place of the list of allowed frequencies.");
+        pw.println("    -c - Colon-separated list of available channel info.");
+        pw.println("      Note: each channel should contain 3 comma separated values, where "
+                + "the first is the global operating class, the second the channel CFI, "
+                + "the third the max EIRP in dBm. To set an empty channel list, enter \"none\" in "
+                + "place of the list of allowed channels.");
+        pw.println("    Example: set-afc-channel-allowance -e 30 -c none -f "
+                + "5925,6020,23:6020,6050,1");
+        pw.println("  configure-afc-server <url> [-r [<request property key> <request property "
+                + "value>] ...]");
+        pw.println("    Sets the server URL and request properties for the HTTP request which the "
+                + "AFC Client will query.");
+        pw.println("    -r - HTTP header fields that come in pairs of key and value which are added"
+                + " to the HTTP request. Must be an even number of arguments. If there is no -r "
+                + "option provided or no arguments provided after the -r option, then set the "
+                + "request properties to none in the request.");
+        pw.println("    Example: configure-afc-server https://testURL -r key1 value1 key2 value2");
     }
 
     @Override

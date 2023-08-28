@@ -158,6 +158,7 @@ public class ActiveModeWarden {
             WifiManager.DEVICE_MOBILITY_STATE_UNKNOWN;
     /** Cache to store the external scorer for primary and secondary (MBB) client mode manager. */
     @Nullable private Pair<IBinder, IWifiConnectedNetworkScorer> mClientModeManagerScorer;
+    private int mScorerUid;
 
     @Nullable
     private ConcreteClientModeManager mLastPrimaryClientModeManager = null;
@@ -407,8 +408,8 @@ public class ActiveModeWarden {
                     }
                     if (newPrimaryClientModeManager != null && mClientModeManagerScorer != null) {
                         newPrimaryClientModeManager.setWifiConnectedNetworkScorer(
-                                mClientModeManagerScorer.first,
-                                mClientModeManagerScorer.second);
+                                mClientModeManagerScorer.first, mClientModeManagerScorer.second,
+                                mScorerUid);
                     }
                 });
     }
@@ -477,7 +478,7 @@ public class ActiveModeWarden {
      * WifiManager.WifiConnectedNetworkScorer)}
      */
     public boolean setWifiConnectedNetworkScorer(IBinder binder,
-            IWifiConnectedNetworkScorer scorer) {
+            IWifiConnectedNetworkScorer scorer, int callerUid) {
         try {
             scorer.onSetScoreUpdateObserver(mExternalScoreUpdateObserverProxy);
         } catch (RemoteException e) {
@@ -485,7 +486,9 @@ public class ActiveModeWarden {
             return false;
         }
         mClientModeManagerScorer = Pair.create(binder, scorer);
-        return getPrimaryClientModeManager().setWifiConnectedNetworkScorer(binder, scorer);
+        mScorerUid = callerUid;
+        return getPrimaryClientModeManager().setWifiConnectedNetworkScorer(binder, scorer,
+                callerUid);
     }
 
     /**
@@ -493,6 +496,7 @@ public class ActiveModeWarden {
      */
     public void clearWifiConnectedNetworkScorer() {
         mClientModeManagerScorer = null;
+        mScorerUid = Process.WIFI_UID;
         getPrimaryClientModeManager().clearWifiConnectedNetworkScorer();
     }
 
