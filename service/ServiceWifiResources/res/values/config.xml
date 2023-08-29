@@ -33,6 +33,13 @@
     <!-- boolean indicating whether the WiFi chipset has 6GHz band support -->
     <bool translatable="false" name ="config_wifi6ghzSupport">false</bool>
 
+    <!-- Boolean indicating whether the device supports AFC.
+            Note that this flag should remain disabled unless the device is allowed to
+            use AFC by the regulatory rules.
+            Note that enabling AFC will result in the device's location being shared
+            with the AFC server. -->
+    <bool translatable="false" name ="config_wifiAfcSupported">false</bool>
+
     <!-- boolean indicating whether the WiFi chipset has 60GHz band support -->
     <bool translatable="false" name ="config_wifi60ghzSupport">false</bool>
 
@@ -1156,6 +1163,18 @@
         -->
     </string-array>
 
+    <!-- Lists available AFC servers for each country, based on country code. Each country may
+     have more than one server listed. If a country is not present in the list, then AFC is not
+     available in that country, and the device will behave as if AFC is disabled.
+     Entries should be in the format:
+     <item>countryCode,url1,url2,url3...</item> -->
+    <string-array translatable="false" name="config_wifiAfcServerUrlsForCountry">
+        <!-- Below is a sample configuration for this list:
+            <item>US,https://example.com/,https://google.com/</item>
+            <item>CA,https://example.com/</item>
+        -->
+    </string-array>
+
     <!-- ACTION_FILE_BUG_DEEPLINK intent name -->
     <string name="config_wifiBugreportDeepLink" translatable="false">com.google.android.apps.betterbug.intent.FILE_BUG_DEEPLINK</string>
 
@@ -1224,4 +1243,12 @@
     <!-- Boolean indication whether enable VDBG for more detailed log when Wi-Fi aware verbose
     logging is enabled -->
     <bool translatable="false" name ="config_aware_vdbg_enable_on_verbose_logging">false</bool>
+    <!-- Boolean indicating the Hal support for mapping WPA3 transition mode to WPA3 for Softap in
+         6GHz band. WPA3 transition mode or SAE+WPA_PSK key management(AKM) is not allowed in 6GHz.
+         By default, framework removes 6GHz band for WPA3_SAE_TRANSITION security type.
+         Enabling this config allows framework to send the 6GHz band to Hostapd HAL for
+         WPA3_SAE_TRANSITION security type. Only enable this flag if Hostapd HAL has the
+         implementation to convert WPA3 transition mode to WPA3 only. otherwise driver/firmware may
+         fail to set up the AP.-->
+    <bool translatable="false" name="config_wifiSofapHalMapWpa3TransitionModeToWpa3OnlyIn6GHzBand">false</bool>
 </resources>
