@@ -585,6 +585,7 @@ public class WifiServiceImpl extends BaseWifiService {
             mWifiInjector.getWifiNotificationManager().createNotificationChannels();
             mWifiMetrics.start();
             mWifiConnectivityManager.initialization();
+            mWifiNetworkFactory.start();
             mContext.registerReceiver(
                     new BroadcastReceiver() {
                         @Override
@@ -5431,9 +5432,10 @@ public class WifiServiceImpl extends BaseWifiService {
     private void updateVerboseLoggingEnabled() {
         final int verboseAlwaysOnLevel = mContext.getResources().getInteger(
                 R.integer.config_wifiVerboseLoggingAlwaysOnLevel);
-        mVerboseLoggingEnabled = mFrameworkFacade.isVerboseLoggingAlwaysOn(verboseAlwaysOnLevel,
-                mBuildProperties)
-                || WifiManager.VERBOSE_LOGGING_LEVEL_DISABLED != mVerboseLoggingLevel;
+        mVerboseLoggingEnabled = WifiManager.VERBOSE_LOGGING_LEVEL_ENABLED == mVerboseLoggingLevel
+                || WifiManager.VERBOSE_LOGGING_LEVEL_ENABLED_SHOW_KEY == mVerboseLoggingLevel
+                || mFrameworkFacade.isVerboseLoggingAlwaysOn(verboseAlwaysOnLevel,
+                mBuildProperties);
     }
 
     private void enableVerboseLoggingInternal(int verboseLoggingLevel) {
@@ -5455,6 +5457,7 @@ public class WifiServiceImpl extends BaseWifiService {
                 WifiManager.VERBOSE_LOGGING_LEVEL_ENABLED == mVerboseLoggingLevel
                         || WifiManager.VERBOSE_LOGGING_LEVEL_ENABLED_SHOW_KEY
                         == mVerboseLoggingLevel;
+        mAfcManager.enableVerboseLogging(mVerboseLoggingEnabled);
         mActiveModeWarden.enableVerboseLogging(mVerboseLoggingEnabled);
         mWifiLockManager.enableVerboseLogging(mVerboseLoggingEnabled);
         mWifiMulticastLockManager.enableVerboseLogging(mVerboseLoggingEnabled);
