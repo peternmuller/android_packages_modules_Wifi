@@ -865,7 +865,7 @@ public class HalDeviceManager {
                 Log.e(TAG, "getIfacesToDestroyForRequest: Wifi Hal is not available");
                 return null;
             }
-            WifiChipInfo[] chipInfos = getAllChipInfo();
+            WifiChipInfo[] chipInfos = getAllChipInfo(false);
             if (chipInfos == null) {
                 Log.e(TAG, "getIfacesToDestroyForRequest: no chip info found");
                 stopWifi(); // major error: shutting down
@@ -1132,12 +1132,12 @@ public class HalDeviceManager {
      * Get current information about all the chips in the system: modes, current mode (if any), and
      * any existing interfaces.
      *
-     * Intended to be called for any external iface support related queries. This information is
-     * cached to reduce performance overhead (unlike {@link #getAllChipInfo()}).
+     * <p>Intended to be called for any external iface support related queries. This information is
+     * cached to reduce performance overhead (unlike {@link #getAllChipInfo(boolean)}).
      */
     private WifiChipInfo[] getAllChipInfoCached() {
         if (mCachedWifiChipInfos == null) {
-            mCachedWifiChipInfos = getAllChipInfo();
+            mCachedWifiChipInfos = getAllChipInfo(false);
         }
         return mCachedWifiChipInfos;
     }
@@ -1146,8 +1146,8 @@ public class HalDeviceManager {
      * Get current information about all the chips in the system: modes, current mode (if any), and
      * any existing interfaces.
      *
-     * Intended to be called whenever we need to configure the chips - information is NOT cached (to
-     * reduce the likelihood that we get out-of-sync).
+     * <p>Intended to be called whenever we need to configure the chips - information is NOT cached
+     * (to reduce the likelihood that we get out-of-sync).
      */
     private WifiChipInfo[] getAllChipInfo() {
         if (VDBG) Log.d(TAG, "getAllChipInfo");
@@ -1164,9 +1164,9 @@ public class HalDeviceManager {
      * Intended to be called whenever we need to configure the chips - information is NOT cached (to
      * reduce the likelihood that we get out-of-sync).
      */
-    private WifiChipInfo[] getAllChipInfo(boolean useCachedStaticChipCombination) {
-        if (VDBG) Log.d(TAG, "getAllChipInfo useCachedStaticChipCombination:"
-                             + useCachedStaticChipCombination);
+    private WifiChipInfo[] getAllChipInfo(boolean forceReadChipInfoFromDriver) {
+        if (VDBG) Log.d(TAG, "getAllChipInfo forceReadChipInfoFromDriver:"
+                             + forceReadChipInfoFromDriver);
 
         synchronized (mLock) {
             if (!isWifiStarted()) {
@@ -1197,15 +1197,6 @@ public class HalDeviceManager {
                 WifiChip chip = mWifiHal.getChip(chipId);
                 if (chip == null) {
                     return null;
-                }
-
-                StaticChipInfo staticChipInfo = staticChipInfoPerId.get(chipId);
-                List<WifiChip.ChipMode> chipModes = null;
-                if (staticChipInfo == null) {
-                    chipModes = chip.getAvailableModes();
-                    if (chipModes == null) {
-                        return null;
-                    }
                 }
 
                 WifiChip.Response<Integer> currentMode = chip.getMode();
@@ -1321,10 +1312,15 @@ public class HalDeviceManager {
 
                 chipInfo.chip = chip;
                 chipInfo.chipId = chipId;
-                if (staticChipInfo != null) {
-                    chipInfo.availableModes = staticChipInfo.getAvailableModes();
-                } else {
+                StaticChipInfo staticChipInfo = staticChipInfoPerId.get(chipId);
+                if (forceReadChipInfoFromDriver || staticChipInfo == null) {
+                    List<WifiChip.ChipMode> chipModes = chip.getAvailableModes();
+                    if (chipModes == null) {
+                        return null;
+                    }
                     chipInfo.availableModes = new ArrayList<>(chipModes);
+                } else {
+                    chipInfo.availableModes = staticChipInfo.getAvailableModes();
                 }
                 chipInfo.currentModeIdValid =
                         currentMode.getStatusCode() == WifiHal.WIFI_STATUS_SUCCESS;
@@ -1475,7 +1471,7 @@ public class HalDeviceManager {
                         Log.d(TAG, "start IWifi succeeded after trying "
                                  + triedCount + " times");
                     }
-                    WifiChipInfo[] wifiChipInfos = getAllChipInfo();
+                    WifiChipInfo[] wifiChipInfos = getAllChipInfo(false);
                     if (wifiChipInfos == null) {
                         Log.e(TAG, "Started wifi but could not get current chip info.");
                     }
@@ -1631,7 +1627,7 @@ public class HalDeviceManager {
         }
 
         synchronized (mLock) {
-            WifiChipInfo[] chipInfos = getAllChipInfo();
+            WifiChipInfo[] chipInfos = getAllChipInfo(false);
             if (chipInfos == null) {
                 Log.e(TAG, "createIface: no chip info found");
                 stopWifi(); // major error: shutting down
@@ -2396,7 +2392,7 @@ public class HalDeviceManager {
                     return null;
                 }
                 if (!mIsConcurrencyComboLoadedFromDriver) {
-                    WifiChipInfo[] wifiChipInfos = getAllChipInfo();
+                    WifiChipInfo[] wifiChipInfos = getAllChipInfo(true);
                     if (wifiChipInfos != null) {
                         mCachedStaticChipInfos =
                                 convertWifiChipInfoToStaticChipInfos(wifiChipInfos);
@@ -2784,7 +2780,7 @@ public class HalDeviceManager {
                 return null;
             }
 
-            WifiChipInfo[] chipInfos = getAllChipInfo();
+            WifiChipInfo[] chipInfos = getAllChipInfo(false);
             if (chipInfos == null) {
                 Log.d(TAG, "createRttControllerIfPossible: no chip info found - most likely chip "
                         + "not up yet");
@@ -2902,7 +2898,7 @@ public class HalDeviceManager {
         pw.println("Dump of HalDeviceManager:");
         pw.println("  mManagerStatusListeners: " + mManagerStatusListeners);
         pw.println("  mInterfaceInfoCache: " + mInterfaceInfoCache);
-        pw.println("  mDebugChipsInfo: " + Arrays.toString(getAllChipInfo()));
+        pw.println("  mDebugChipsInfo: " + Arrays.toString(getAllChipInfo(false)));
     }
 
 
