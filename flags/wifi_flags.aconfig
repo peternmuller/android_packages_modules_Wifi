@@ -6,3 +6,26 @@ flag {
     description: "This flag aim to test the flag release for wifi stack"
     bug: "301145404"
 }
+
+flag {
+    name: "runtime_disable_pno_scan"
+    namespace: "wifi"
+    description: "Control the API to disable the PNO runtime"
+    bug: "282821585"
+}
+
+
+flag {
+    name: "delay_save_to_store"
+    namespace: "wifi"
+    description: "Control the feature delay the save to store in batch to reduce the blocking time"
+    bug: "302172794"
+}
+
+
+flag {
+    name: "single_wifi_thread"
+    namespace: "wifi"
+    description: "Control the feature that move all Wifi service to a single thread"
+    bug: "302593617"
+}
