@@ -407,6 +407,9 @@ public final class SoftApConfiguration implements Parcelable {
      */
     private final long mBridgedModeOpportunisticShutdownTimeoutMillis;
 
+    /** List of {@link OuiKeyedData} providing vendor-specific configuration data. */
+    private @NonNull List<OuiKeyedData> mVendorData;
+
     /**
      * THe definition of security type OPEN.
      */
@@ -455,20 +458,34 @@ public final class SoftApConfiguration implements Parcelable {
     private final @Nullable String mOweTransIfaceName;
 
     /** Private constructor for Builder and Parcelable implementation. */
-    private SoftApConfiguration(@Nullable WifiSsid ssid, @Nullable MacAddress bssid,
-            @Nullable String passphrase, boolean hiddenSsid, @NonNull SparseIntArray channels,
-            @SecurityType int securityType, int maxNumberOfClients, boolean shutdownTimeoutEnabled,
-            long shutdownTimeoutMillis, boolean clientControlByUser,
-            @NonNull List<MacAddress> blockedList, @NonNull List<MacAddress> allowedList,
-            int macRandomizationSetting, boolean bridgedModeOpportunisticShutdownEnabled,
-            boolean ieee80211axEnabled, boolean ieee80211beEnabled, boolean isUserConfiguration,
+    private SoftApConfiguration(
+            @Nullable WifiSsid ssid,
+            @Nullable MacAddress bssid,
+            @Nullable String passphrase,
+            boolean hiddenSsid,
+            @NonNull SparseIntArray channels,
+            @SecurityType int securityType,
+            int maxNumberOfClients,
+            boolean shutdownTimeoutEnabled,
+            long shutdownTimeoutMillis,
+            boolean clientControlByUser,
+            @NonNull List<MacAddress> blockedList,
+            @NonNull List<MacAddress> allowedList,
+            int macRandomizationSetting,
+            boolean bridgedModeOpportunisticShutdownEnabled,
+            boolean ieee80211axEnabled,
+            boolean ieee80211beEnabled,
+            boolean isUserConfiguration,
             long bridgedModeOpportunisticShutdownTimeoutMillis,
             @NonNull List<ScanResult.InformationElement> vendorElements,
             @Nullable MacAddress persistentRandomizedMacAddress,
-            @NonNull Set<Integer> allowedAcsChannels24g, @NonNull Set<Integer> allowedAcsChannels5g,
+            @NonNull Set<Integer> allowedAcsChannels24g,
+            @NonNull Set<Integer> allowedAcsChannels5g,
             @NonNull Set<Integer> allowedAcsChannels6g,
             @WifiAnnotations.Bandwidth int maxChannelBandwidth,
-            @Nullable String oweTransIfaceName) {
+            @Nullable String oweTransIfaceName,
+            @Nullable List<OuiKeyedData> vendorData) {
+
         mWifiSsid = ssid;
         mBssid = bssid;
         mPassphrase = passphrase;
@@ -500,6 +517,7 @@ public final class SoftApConfiguration implements Parcelable {
         mAllowedAcsChannels6g = new HashSet<>(allowedAcsChannels6g);
         mMaxChannelBandwidth = maxChannelBandwidth;
         mOweTransIfaceName = oweTransIfaceName;
+        mVendorData = new ArrayList<>(vendorData);
     }
 
     @Override
@@ -532,13 +550,14 @@ public final class SoftApConfiguration implements Parcelable {
                 && mBridgedModeOpportunisticShutdownTimeoutMillis
                         == other.mBridgedModeOpportunisticShutdownTimeoutMillis
                 && Objects.equals(mVendorElements, other.mVendorElements)
-                && Objects.equals(mPersistentRandomizedMacAddress,
-                        other.mPersistentRandomizedMacAddress)
+                && Objects.equals(
+                        mPersistentRandomizedMacAddress, other.mPersistentRandomizedMacAddress)
                 && Objects.equals(mAllowedAcsChannels2g, other.mAllowedAcsChannels2g)
                 && Objects.equals(mAllowedAcsChannels5g, other.mAllowedAcsChannels5g)
                 && Objects.equals(mAllowedAcsChannels6g, other.mAllowedAcsChannels6g)
                 && mOweTransIfaceName == other.mOweTransIfaceName
-                && mMaxChannelBandwidth == other.mMaxChannelBandwidth;
+                && mMaxChannelBandwidth == other.mMaxChannelBandwidth
+                && Objects.equals(mVendorData, other.mVendorData);
     }
 
     @Override
@@ -551,7 +570,7 @@ public final class SoftApConfiguration implements Parcelable {
                 mIsUserConfiguration, mBridgedModeOpportunisticShutdownTimeoutMillis,
                 mVendorElements, mPersistentRandomizedMacAddress, mAllowedAcsChannels2g,
                 mAllowedAcsChannels5g, mAllowedAcsChannels6g, mMaxChannelBandwidth,
-                mOweTransIfaceName);
+                mOweTransIfaceName, mVendorData);
     }
 
     @Override
@@ -586,6 +605,7 @@ public final class SoftApConfiguration implements Parcelable {
         sbuf.append(" \n mAllowedAcsChannels6g = ").append(mAllowedAcsChannels6g);
         sbuf.append(" \n mMaxChannelBandwidth = ").append(mMaxChannelBandwidth);
         sbuf.append(" \n OWE Transition mode Iface =").append(mOweTransIfaceName);
+        sbuf.append(" \n mVendorData = ").append(mVendorData);
         return sbuf.toString();
     }
 
@@ -616,6 +636,7 @@ public final class SoftApConfiguration implements Parcelable {
         writeHashSetInt(dest, mAllowedAcsChannels6g);
         dest.writeInt(mMaxChannelBandwidth);
         dest.writeString(mOweTransIfaceName);
+        dest.writeList(mVendorData);
     }
 
     /* Reference from frameworks/base/core/java/android/os/Parcel.java */
@@ -680,6 +701,18 @@ public final class SoftApConfiguration implements Parcelable {
         return set;
     }
 
+    /* Read List<OuiKeyedData> from Parcel */
+    @NonNull
+    private static List<OuiKeyedData> readOuiKeyedDataList(@NonNull Parcel in) {
+        List<OuiKeyedData> dataList = new ArrayList<>();
+        if (SdkLevel.isAtLeastT()) {
+            in.readList(dataList, OuiKeyedData.class.getClassLoader(), OuiKeyedData.class);
+        } else {
+            in.readList(dataList, OuiKeyedData.class.getClassLoader());
+        }
+        return dataList;
+    }
+
     @Override
     public int describeContents() {
         return 0;
@@ -703,7 +736,8 @@ public final class SoftApConfiguration implements Parcelable {
                     readHashSetInt(in),
                     readHashSetInt(in),
                     in.readInt(),
-                    in.readString());
+                    in.readString(),
+                    readOuiKeyedDataList(in));
         }
 
         @Override
@@ -1167,6 +1201,23 @@ public final class SoftApConfiguration implements Parcelable {
     }
 
     /**
+     * Return the vendor-provided configuration data, if it exists. See also {@link
+     * Builder#setVendorData(List)}
+     *
+     * @return Vendor configuration data, or empty list if it does not exist.
+     * @hide
+     */
+    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @NonNull
+    @SystemApi
+    public List<OuiKeyedData> getVendorData() {
+        if (!SdkLevel.isAtLeastV()) {
+            throw new UnsupportedOperationException();
+        }
+        return mVendorData;
+    }
+
+    /**
      * Returns a {@link WifiConfiguration} representation of this {@link SoftApConfiguration}.
      * Note that SoftApConfiguration may contain configuration which is cannot be represented
      * by the legacy WifiConfiguration, in such cases a null will be returned.
@@ -1272,7 +1323,7 @@ public final class SoftApConfiguration implements Parcelable {
         private Set<Integer> mAllowedAcsChannels6g;
         private @WifiAnnotations.Bandwidth int mMaxChannelBandwidth;
         private String mOweTransIfaceName;
-
+        private @Nullable List<OuiKeyedData> mVendorData;
         /**
          * Constructs a Builder with default values (see {@link Builder}).
          */
@@ -1307,6 +1358,7 @@ public final class SoftApConfiguration implements Parcelable {
             mAllowedAcsChannels6g = new HashSet<>();
             mMaxChannelBandwidth = SoftApInfo.CHANNEL_WIDTH_AUTO;
             mOweTransIfaceName = null;
+            mVendorData = new ArrayList<>();
         }
 
         /**
@@ -1351,6 +1403,7 @@ public final class SoftApConfiguration implements Parcelable {
                 mMacRandomizationSetting = RANDOMIZATION_NONE;
             }
             mOweTransIfaceName = other.mOweTransIfaceName;
+            mVendorData = new ArrayList<>(other.mVendorData);
         }
 
         /**
@@ -1378,6 +1431,7 @@ public final class SoftApConfiguration implements Parcelable {
                     REMOVE_ZERO_FOR_TIMEOUT_SETTING) && mShutdownTimeoutMillis == DEFAULT_TIMEOUT) {
                 mShutdownTimeoutMillis = 0; // Use 0 for legacy app.
             }
+
             return new SoftApConfiguration(mWifiSsid, mBssid, mPassphrase,
                     mHiddenSsid, mChannels, mSecurityType, mMaxNumberOfClients,
                     mAutoShutdownEnabled, mShutdownTimeoutMillis, mClientControlByUser,
@@ -1387,7 +1441,7 @@ public final class SoftApConfiguration implements Parcelable {
                     mBridgedModeOpportunisticShutdownTimeoutMillis, mVendorElements,
                     mPersistentRandomizedMacAddress, mAllowedAcsChannels2g, mAllowedAcsChannels5g,
                     mAllowedAcsChannels6g, mMaxChannelBandwidth,
-                    mOweTransIfaceName);
+                    mOweTransIfaceName, mVendorData);
         }
 
         /**
@@ -2262,6 +2316,26 @@ public final class SoftApConfiguration implements Parcelable {
         @NonNull
         public Builder setOweTransIfaceName(@Nullable String oweTransIfaceName) {
             mOweTransIfaceName = oweTransIfaceName;
+            return this;
+        }
+
+        /**
+         * Set additional vendor-provided configuration data.
+         *
+         * @param vendorData List of {@link OuiKeyedData} containing the vendor-provided
+         *     configuration data. Note that multiple elements with the same OUI are allowed.
+         * @return Builder for chaining.
+         */
+        @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+        @NonNull
+        public Builder setVendorData(@NonNull List<OuiKeyedData> vendorData) {
+            if (!SdkLevel.isAtLeastV()) {
+                throw new UnsupportedOperationException();
+            }
+            if (vendorData == null) {
+                throw new IllegalArgumentException("setVendorData received a null value");
+            }
+            mVendorData = vendorData;
             return this;
         }
     }

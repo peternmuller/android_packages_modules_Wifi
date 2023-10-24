@@ -66,6 +66,7 @@ public class WifiGlobals {
     private final int mPollRssiLongIntervalMillis;
     private final int mClientRssiMonitorThresholdDbm;
     private final int mClientRssiMonitorHysteresisDb;
+    private boolean mDisableFirmwareRoamingInIdleMode = false;
     private final boolean mAdjustPollRssiIntervalEnabled;
     private final boolean mWifiInterfaceAddedSelfRecoveryEnabled;
     private final int mNetworkNotFoundEventThreshold;
@@ -122,6 +123,8 @@ public class WifiGlobals {
                 R.integer.config_wifiClientRssiMonitorHysteresisDb);
         mAdjustPollRssiIntervalEnabled = mContext.getResources().getBoolean(
                 R.bool.config_wifiAdjustPollRssiIntervalEnabled);
+        mDisableFirmwareRoamingInIdleMode = mContext.getResources()
+                .getBoolean(R.bool.config_wifiDisableFirmwareRoamingInIdleMode);
         mWifiInterfaceAddedSelfRecoveryEnabled = mContext.getResources().getBoolean(
                 R.bool.config_wifiInterfaceAddedSelfRecoveryEnabled);
 	mIsDisconnectOnlyOnInitialIpReachability = mContext.getResources()
@@ -259,6 +262,14 @@ public class WifiGlobals {
      */
     public boolean isWpaPersonalDeprecated() {
         return mIsWpaPersonalDeprecated;
+    }
+
+    /**
+     * Helper method to check whether this device should disable firmware roaming in idle mode.
+     * @return if the device should disable firmware roaming in idle mode.
+     */
+    public boolean isDisableFirmwareRoamingInIdleMode() {
+        return mDisableFirmwareRoamingInIdleMode;
     }
 
     /**
@@ -487,6 +498,7 @@ public class WifiGlobals {
         pw.println("mNetworkNotFoundEventThreshold=" + mNetworkNotFoundEventThreshold);
         pw.println("mIsWepDeprecated=" + mIsWepDeprecated);
         pw.println("mIsWpaPersonalDeprecated=" + mIsWpaPersonalDeprecated);
+        pw.println("mDisableFirmwareRoamingInIdleMode=" + mDisableFirmwareRoamingInIdleMode);
         pw.println("mIsDisconnectOnlyOnInitialIpReachability=" + mIsDisconnectOnlyOnInitialIpReachability);
     }
 }

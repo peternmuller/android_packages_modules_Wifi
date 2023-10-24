@@ -54,6 +54,7 @@ import com.android.server.wifi.hal.WifiP2pIface;
 import com.android.server.wifi.hal.WifiRttController;
 import com.android.server.wifi.hal.WifiStaIface;
 import com.android.server.wifi.util.WorkSourceHelper;
+import com.android.wifi.flags.FeatureFlags;
 import com.android.wifi.resources.R;
 
 import org.json.JSONArray;
@@ -78,6 +79,7 @@ import java.util.stream.Collectors;
 public class HalDeviceManager {
     private static final String TAG = "HalDevMgr";
     private static final boolean VDBG = false;
+    private final FeatureFlags mFeatureFlags;
     private boolean mDbg = false;
 
     public static final long CHIP_CAPABILITY_ANY = 0L;
@@ -152,6 +154,7 @@ public class HalDeviceManager {
         mContext = context;
         mClock = clock;
         mWifiInjector = wifiInjector;
+        mFeatureFlags = mWifiInjector.getDeviceConfigFacade().getFeatureFlags();
         mEventHandler = handler;
         mIWifiDeathRecipient = new WifiDeathRecipient();
         mWifiHal = getWifiHalMockable(context, wifiInjector);
@@ -1698,6 +1701,30 @@ public class HalDeviceManager {
                     }
                 }
             }
+            if (bestIfaceCreationProposal == null) {
+                List<String> createIfaceInfoString = new ArrayList<String>();
+                for (WifiChipInfo chipInfo : chipInfos) {
+                    for (int existingCreateType : CREATE_TYPES_BY_PRIORITY) {
+                        WifiIfaceInfo[] createTypeIfaces = chipInfo.ifaces[existingCreateType];
+                        for (WifiIfaceInfo intfInfo : createTypeIfaces) {
+                            if (intfInfo != null) {
+                                createIfaceInfoString.add(
+                                        "name="
+                                                + intfInfo.name
+                                                + " type="
+                                                + getIfaceTypeToString(intfInfo.createType));
+                            }
+                        }
+                    }
+                }
+                Log.i(
+                        TAG,
+                        "bestIfaceCreationProposal is null,"
+                                + " requestIface="
+                                + getIfaceTypeToString(createIfaceType)
+                                + ", existingIface="
+                                + createIfaceInfoString);
+            }
             return bestIfaceCreationProposal;
         }
     }
@@ -1764,23 +1791,6 @@ public class HalDeviceManager {
                             Pair.create(cacheEntry.name, cacheEntry.type), cacheEntry);
                     return iface;
                 }
-            } else {
-                List<String> createIfaceInfoString = new ArrayList<String>();
-                for (WifiChipInfo chipInfo : chipInfos) {
-                    for (int existingCreateType : CREATE_TYPES_BY_PRIORITY) {
-                        WifiIfaceInfo[] createTypeIfaces = chipInfo.ifaces[existingCreateType];
-                        for (WifiIfaceInfo intfInfo : createTypeIfaces) {
-                            if (intfInfo != null) {
-                                createIfaceInfoString.add(
-                                        "name=" + intfInfo.name + " type=" + getIfaceTypeToString(
-                                                intfInfo.createType));
-                            }
-                        }
-                    }
-                }
-                Log.i(TAG, "bestIfaceCreationProposal is null," + " requestIface="
-                        + getIfaceTypeToString(createIfaceType) + ", existingIface="
-                        + createIfaceInfoString);
             }
         }
 
@@ -2111,17 +2121,19 @@ public class HalDeviceManager {
             @WorkSourceHelper.RequestorWsPriority int newRequestorWsPriority,
             @HdmIfaceTypeForCreation int existingCreateType,
             @WorkSourceHelper.RequestorWsPriority int existingRequestorWsPriority) {
-        return !canDeviceSupportCreateTypeCombo(
-                new SparseArray<Integer>() {{
-                    put(HDM_CREATE_IFACE_STA, 1);
-                    put(HDM_CREATE_IFACE_AP, 1);
-                }})
-                && (requestedCreateType == HDM_CREATE_IFACE_AP
-                || requestedCreateType == HDM_CREATE_IFACE_AP_BRIDGE)
+        return (requestedCreateType == HDM_CREATE_IFACE_AP
+                        || requestedCreateType == HDM_CREATE_IFACE_AP_BRIDGE)
                 && newRequestorWsPriority != WorkSourceHelper.PRIORITY_INTERNAL
                 && newRequestorWsPriority != WorkSourceHelper.PRIORITY_PRIVILEGED
                 && existingCreateType == HDM_CREATE_IFACE_STA
-                && existingRequestorWsPriority == WorkSourceHelper.PRIORITY_PRIVILEGED;
+                && existingRequestorWsPriority == WorkSourceHelper.PRIORITY_PRIVILEGED
+                && !canDeviceSupportCreateTypeCombo(
+                        new SparseArray<Integer>() {
+                            {
+                                put(HDM_CREATE_IFACE_STA, 1);
+                                put(HDM_CREATE_IFACE_AP, 1);
+                            }
+                        });
     }
 
     /**
@@ -2628,6 +2640,10 @@ public class HalDeviceManager {
             //  When all wifi services (ie. WifiAware, WifiP2p) get moved to the wifi handler
             //  thread, remove this thread check and the Handler#post() and simply always
             //  invoke the callback directly.
+            if (mFeatureFlags.singleWifiThread()) {
+                action();
+                return;
+            }
             if (requestedToRunInCurrentThread()) {
                 // Already running on the same handler thread. Trigger listener synchronously.
                 action();
@@ -2896,8 +2912,10 @@ public class HalDeviceManager {
      */
     public void dump(FileDescriptor fd, PrintWriter pw, String[] args) {
         pw.println("Dump of HalDeviceManager:");
-        pw.println("  mManagerStatusListeners: " + mManagerStatusListeners);
-        pw.println("  mInterfaceInfoCache: " + mInterfaceInfoCache);
+        synchronized (mLock) {
+            pw.println("  mManagerStatusListeners: " + mManagerStatusListeners);
+            pw.println("  mInterfaceInfoCache: " + mInterfaceInfoCache);
+        }
         pw.println("  mDebugChipsInfo: " + Arrays.toString(getAllChipInfo(false)));
     }
 

@@ -712,6 +712,7 @@ public class WifiServiceImpl extends BaseWifiService {
         mWifiPulledAtomLogger.setPullAtomCallback(WifiStatsLog.WIFI_MODULE_INFO);
         mWifiPulledAtomLogger.setPullAtomCallback(WifiStatsLog.WIFI_SETTING_INFO);
         mWifiPulledAtomLogger.setPullAtomCallback(WifiStatsLog.WIFI_COMPLEX_SETTING_INFO);
+        mWifiPulledAtomLogger.setPullAtomCallback(WifiStatsLog.WIFI_CONFIGURED_NETWORK_INFO);
     }
 
     private void updateLocationMode() {
@@ -970,12 +971,13 @@ public class WifiServiceImpl extends BaseWifiService {
             boolean idle = mPowerManager.isDeviceIdleMode();
             if (mInIdleMode != idle) {
                 mInIdleMode = idle;
-                if (!idle) {
+                if (!idle) { // exiting doze mode
                     if (mScanPending) {
                         mScanPending = false;
                         doScan = true;
                     }
                 }
+                mActiveModeWarden.onIdleModeChanged(idle);
             }
         }
         if (doScan) {
@@ -2398,6 +2400,11 @@ public class WifiServiceImpl extends BaseWifiService {
          */
         @GuardedBy("mLocalOnlyHotspotRequests")
         private void sendHotspotStartedMessageToAllLOHSRequestInfoEntriesLocked() {
+            if (mActiveConfig == null) {
+                Log.e(TAG, "lohs.sendHotspotStartedMessageToAllLOHSRequestInfoEntriesLocked "
+                        + "mActiveConfig is null");
+                return;
+            }
             for (LocalOnlyHotspotRequestInfo requestor : mLocalOnlyHotspotRequests.values()) {
                 try {
                     requestor.sendHotspotStartedMessage(mActiveConfig.getSoftApConfiguration());
@@ -4274,12 +4281,24 @@ public class WifiServiceImpl extends BaseWifiService {
             mLog.info("getConnectionInfo uid=%").c(uid).flush();
         }
         mWifiPermissionsUtil.checkPackage(uid, callingPackage);
+        if (mActiveModeWarden.getWifiState() != WIFI_STATE_ENABLED) {
+            return new WifiInfo();
+        }
+        WifiInfo wifiInfo;
+        if (isCurrentRequestWsContainsCaller(uid, callingPackage)) {
+            wifiInfo =
+                    mWifiThreadRunner.call(
+                            () ->
+                                    getClientModeManagerIfSecondaryCmmRequestedByCallerPresent(
+                                                    uid, callingPackage)
+                                            .getConnectionInfo(),
+                            new WifiInfo());
+        } else {
+            // If no caller
+            wifiInfo = mActiveModeWarden.getConnectionInfo();
+        }
         long ident = Binder.clearCallingIdentity();
         try {
-            WifiInfo wifiInfo = mWifiThreadRunner.call(
-                    () -> getClientModeManagerIfSecondaryCmmRequestedByCallerPresent(
-                            uid, callingPackage)
-                            .getConnectionInfo(), new WifiInfo());
             long redactions = wifiInfo.getApplicableRedactions();
             if (mWifiPermissionsUtil.checkLocalMacAddressPermission(uid)) {
                 if (mVerboseLoggingEnabled) {
@@ -4313,6 +4332,23 @@ public class WifiServiceImpl extends BaseWifiService {
         } finally {
             Binder.restoreCallingIdentity(ident);
         }
+    }
+
+    private boolean isCurrentRequestWsContainsCaller(int uid, String callingPackage) {
+        Set<WorkSource> requestWs = mActiveModeWarden.getSecondaryRequestWs();
+        for (WorkSource ws : requestWs) {
+            WorkSource reqWs = new WorkSource(ws);
+            if (reqWs.size() > 1) {
+                // Remove promoted settings WorkSource if present
+                reqWs.remove(mFrameworkFacade.getSettingsWorkSource(mContext));
+            }
+            WorkSource withCaller = new WorkSource(reqWs);
+            withCaller.add(new WorkSource(uid, callingPackage));
+            if (reqWs.equals(withCaller)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -5536,19 +5572,21 @@ public class WifiServiceImpl extends BaseWifiService {
         for (PasspointConfiguration config : configs) {
             removePasspointConfigurationInternal(null, config.getUniqueId());
         }
-        mWifiThreadRunner.post(() -> {
-            // Reset SoftApConfiguration to default configuration
-            mWifiApConfigStore.setApConfiguration(null);
-            mPasspointManager.clearAnqpRequestsAndFlushCache();
-            mWifiConfigManager.clearUserTemporarilyDisabledList();
-            mWifiConfigManager.removeAllEphemeralOrPasspointConfiguredNetworks();
-            mWifiInjector.getWifiNetworkFactory().clear();
-            mWifiNetworkSuggestionsManager.clear();
-            mWifiInjector.getWifiScoreCard().clear();
-            mWifiHealthMonitor.clear();
-            mWifiCarrierInfoManager.clear();
-            notifyFactoryReset();
-        });
+        mWifiThreadRunner.post(
+                () -> {
+                    // Reset SoftApConfiguration to default configuration
+                    mWifiApConfigStore.setApConfiguration(null);
+                    mPasspointManager.clearAnqpRequestsAndFlushCache();
+                    mWifiConfigManager.clearUserTemporarilyDisabledList();
+                    mWifiConfigManager.removeAllEphemeralOrPasspointConfiguredNetworks();
+                    mWifiInjector.getWifiNetworkFactory().clear();
+                    mWifiNetworkSuggestionsManager.clear();
+                    mWifiInjector.getWifiScoreCard().clear();
+                    mWifiHealthMonitor.clear();
+                    mWifiCarrierInfoManager.clear();
+                    notifyFactoryReset();
+                    mContext.resetResourceCache();
+                });
     }
 
     /**
@@ -5677,10 +5715,18 @@ public class WifiServiceImpl extends BaseWifiService {
         }
         int callingUid = Binder.getCallingUid();
         if (configurations.isEmpty()) return;
-        final int batchNum = mContext.getResources().getInteger(
-                    R.integer.config_wifiConfigurationRestoreNetworksBatchNum);
-        mWifiThreadRunner.run(new NetworkUpdater(callingUid, configurations, 0,
-                batchNum > 0 ? batchNum : configurations.size()));
+        final int batchNum =
+                mDeviceConfigFacade.getFeatureFlags().delaySaveToStore()
+                        ? 0
+                        : mContext.getResources()
+                                .getInteger(
+                                        R.integer.config_wifiConfigurationRestoreNetworksBatchNum);
+        mWifiThreadRunner.post(
+                new NetworkUpdater(
+                        callingUid,
+                        configurations,
+                        0,
+                        batchNum > 0 ? batchNum : configurations.size()));
     }
 
     /**
@@ -5734,14 +5780,14 @@ public class WifiServiceImpl extends BaseWifiService {
         return softApConfig;
     }
 
-
     /**
-     * Restore state from the older supplicant back up data.
-     * The old backup data was essentially a backup of wpa_supplicant.conf & ipconfig.txt file.
+     * Restore state from the older supplicant back up data. The old backup data was essentially a
+     * backup of wpa_supplicant.conf & ipconfig.txt file.
      *
      * @param supplicantData Raw byte stream of wpa_supplicant.conf
      * @param ipConfigData Raw byte stream of ipconfig.txt
      */
+    @Override
     public void restoreSupplicantBackupData(byte[] supplicantData, byte[] ipConfigData) {
         enforceNetworkSettingsPermission();
         mLog.trace("restoreSupplicantBackupData uid=%").c(Binder.getCallingUid()).flush();
