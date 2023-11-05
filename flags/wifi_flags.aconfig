@@ -42,3 +42,45 @@ flag {
     description: "Control the API that allow only enable verbose logging for Wifi Aware"
     bug: "289273616"
 }
+
+flag {
+    name: "add_channel_stats_per_link"
+    namespace: "wifi"
+    description: "Control the API that get the channel stats per link from WifiUsabilityStatsEntry"
+    bug: "276385220"
+}
+
+flag {
+    name: "mlo_link_capabilities_info"
+    namespace: "wifi"
+    description: "Control the API that get the MLO link capabilities"
+    bug: "262643386"
+}
+
+flag {
+    name: "disable_reason_unwanted_low_rssi"
+    namespace: "wifi"
+    description: "Control the API that as disable because of unwanted network under sufficient rssi"
+    bug: "262643386"
+}
+
+flag {
+    name: "low_latency_lock_listener"
+    namespace: "wifi"
+    description: "Control the API that add/remove the low latency lock listener"
+    bug: "277556184"
+}
+
+flag {
+    name: "network_provider_battery_charging_status"
+    namespace: "wifi"
+    description: "Control the API that allows setting / reading the NetworkProviderInfo's battery charging status"
+    bug: "305067231"
+}
+
+flag {
+    name: "shared_connectivity_broadcast_receiver_test_api"
+    namespace: "wifi"
+    description: "Control the test API for SharedConnectivityManager's getBroadcastReceiver() method"
+    bug: "305067231"
+}
