@@ -57,6 +57,7 @@ import static android.net.wifi.WifiScanner.WIFI_BAND_24_GHZ;
 import static android.net.wifi.WifiScanner.WIFI_BAND_5_GHZ;
 import static android.os.Process.WIFI_UID;
 import static android.os.Process.myUid;
+
 import static com.android.dx.mockito.inline.extended.ExtendedMockito.mockitoSession;
 import static com.android.server.wifi.ActiveModeManager.ROLE_CLIENT_LOCAL_ONLY;
 import static com.android.server.wifi.ActiveModeManager.ROLE_CLIENT_PRIMARY;
@@ -67,8 +68,11 @@ import static com.android.server.wifi.SelfRecovery.REASON_API_CALL;
 import static com.android.server.wifi.WifiConfigurationTestUtil.SECURITY_NONE;
 import static com.android.server.wifi.WifiSettingsConfigStore.SHOW_DIALOG_WHEN_THIRD_PARTY_APPS_ENABLE_WIFI;
 import static com.android.server.wifi.WifiSettingsConfigStore.SHOW_DIALOG_WHEN_THIRD_PARTY_APPS_ENABLE_WIFI_SET_BY_API;
+import static com.android.server.wifi.WifiSettingsConfigStore.WIFI_STA_FACTORY_MAC_ADDRESS;
 import static com.android.server.wifi.WifiSettingsConfigStore.WIFI_VERBOSE_LOGGING_ENABLED;
+
 import static com.google.common.truth.Truth.assertThat;
+
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -465,6 +469,7 @@ public class WifiServiceImplTest extends WifiBaseTest {
     @Mock ScoringParams mScoringParams;
     @Mock ApplicationQosPolicyRequestHandler mApplicationQosPolicyRequestHandler;
     @Mock Location mLocation;
+    @Mock WifiDeviceStateChangeManager mWifiDeviceStateChangeManager;
     @Captor ArgumentCaptor<Intent> mIntentCaptor;
     @Captor ArgumentCaptor<List> mListCaptor;
 
@@ -519,6 +524,8 @@ public class WifiServiceImplTest extends WifiBaseTest {
         // needed to mock this to call "handleBootCompleted"
         when(mWifiInjector.getPasspointProvisionerHandlerThread())
                 .thenReturn(mock(HandlerThread.class));
+        when(mWifiInjector.getWifiDeviceStateChangeManager())
+                .thenReturn(mWifiDeviceStateChangeManager);
         when(mHandlerThread.getThreadHandler()).thenReturn(new Handler(mLooper.getLooper()));
         when(mHandlerThread.getLooper()).thenReturn(mLooper.getLooper());
         when(mContext.getResources()).thenReturn(mResources);
@@ -782,8 +789,6 @@ public class WifiServiceImplTest extends WifiBaseTest {
     public void testWifiMetricsDump() {
         mWifiServiceImpl.checkAndStartWifi();
         mLooper.dispatchAll();
-        verify(mWifiMetrics).start();
-        verify(mWifiConnectivityManager).initialization();
         mLooper.startAutoDispatch();
         mWifiServiceImpl.dump(new FileDescriptor(), new PrintWriter(new StringWriter()),
                 new String[]{mWifiMetrics.PROTO_DUMP_ARG});
@@ -1891,6 +1896,7 @@ public class WifiServiceImplTest extends WifiBaseTest {
         verify(mWifiConfigManager).loadFromStore();
         verify(mActiveModeWarden).start();
         verify(mActiveModeWarden, never()).wifiToggled(any());
+        verify(mWifiDeviceStateChangeManager).handleBootCompleted();
     }
 
     @Test
@@ -1920,11 +1926,9 @@ public class WifiServiceImplTest extends WifiBaseTest {
                 anyInt(), anyInt())).thenReturn(PackageManager.PERMISSION_GRANTED);
         mWifiServiceImpl.checkAndStartWifi();
         mLooper.dispatchAll();
-        verify(mWifiMetrics).start();
-        verify(mWifiConnectivityManager).initialization();
         verify(mWifiConfigManager).loadFromStore();
         verify(mActiveModeWarden).start();
-        verify(mWifiNetworkFactory).start();
+        verify(mWifiDeviceStateChangeManager).handleBootCompleted();
     }
 
     @Test
@@ -5918,6 +5922,36 @@ public class WifiServiceImplTest extends WifiBaseTest {
     }
 
     @Test
+    public void testPackageRemovedWithReplacingBroadcastHandling() throws Exception {
+        mWifiServiceImpl.checkAndStartWifi();
+        mLooper.dispatchAll();
+        verify(mContext)
+                .registerReceiver(
+                        mBroadcastReceiverCaptor.capture(),
+                        argThat(
+                                (IntentFilter filter) ->
+                                        filter.hasAction(Intent.ACTION_PACKAGE_FULLY_REMOVED)
+                                                && filter.hasAction(Intent.ACTION_PACKAGE_REMOVED)
+                                                && filter.hasAction(Intent.ACTION_PACKAGE_CHANGED)),
+                        isNull(),
+                        any(Handler.class));
+        int uid = TEST_UID;
+        String packageName = TEST_PACKAGE_NAME;
+        // Send the broadcast
+        Intent intent = new Intent(Intent.ACTION_PACKAGE_REMOVED);
+        intent.putExtra(Intent.EXTRA_UID, uid);
+        intent.setData(Uri.fromParts("package", packageName, ""));
+        intent.putExtra(Intent.EXTRA_REPLACING, true);
+        mBroadcastReceiverCaptor.getValue().onReceive(mContext, intent);
+        mLooper.dispatchAll();
+        verify(mWifiConfigManager, never()).removeNetworksForApp(any());
+        verify(mScanRequestProxy, never()).clearScanRequestTimestampsForApp(anyString(), anyInt());
+        verify(mWifiNetworkSuggestionsManager, never()).removeApp(anyString());
+        verify(mWifiNetworkFactory, never()).removeApp(anyString());
+        verify(mPasspointManager, never()).removePasspointProviderWithPackage(anyString());
+    }
+
+    @Test
     public void testPackageDisableBroadcastHandling() throws Exception {
         mWifiServiceImpl.checkAndStartWifi();
         mLooper.dispatchAll();
@@ -7280,6 +7314,8 @@ public class WifiServiceImplTest extends WifiBaseTest {
      */
     @Test
     public void testGetFactoryMacAddresses() throws Exception {
+        when(mWifiGlobals.isSaveFactoryMacToConfigStoreEnabled()).thenReturn(true);
+        when(mWifiSettingsConfigStore.get(WIFI_STA_FACTORY_MAC_ADDRESS)).thenReturn(null);
         when(mClientModeManager.getFactoryMacAddress()).thenReturn(TEST_FACTORY_MAC);
         when(mWifiPermissionsUtil.checkNetworkSettingsPermission(anyInt())).thenReturn(true);
         mLooper.startAutoDispatch();
@@ -7288,6 +7324,7 @@ public class WifiServiceImplTest extends WifiBaseTest {
         assertEquals(1, factoryMacs.length);
         assertEquals(TEST_FACTORY_MAC, factoryMacs[0]);
         verify(mClientModeManager).getFactoryMacAddress();
+        verify(mWifiSettingsConfigStore).get(WIFI_STA_FACTORY_MAC_ADDRESS);
     }
 
     /**
@@ -7335,6 +7372,20 @@ public class WifiServiceImplTest extends WifiBaseTest {
             assertTrue("Exception message should contain 'factory MAC'",
                     e.toString().contains("factory MAC"));
         }
+    }
+
+    @Test
+    public void testGetFactoryMacAddressesSuccessFromSettingStore() throws Exception {
+        when(mWifiGlobals.isSaveFactoryMacToConfigStoreEnabled()).thenReturn(true);
+        when(mWifiSettingsConfigStore.get(WIFI_STA_FACTORY_MAC_ADDRESS))
+                .thenReturn(TEST_FACTORY_MAC);
+        when(mWifiPermissionsUtil.checkNetworkSettingsPermission(anyInt())).thenReturn(true);
+        when(mClientModeManager.getFactoryMacAddress()).thenReturn(TEST_FACTORY_MAC);
+        final String[] factoryMacs = mWifiServiceImpl.getFactoryMacAddresses();
+        assertEquals(1, factoryMacs.length);
+        assertEquals(TEST_FACTORY_MAC, factoryMacs[0]);
+        mLooper.dispatchAll();
+        verify(mClientModeManager, never()).getFactoryMacAddress();
     }
 
     /**
@@ -9304,9 +9355,8 @@ public class WifiServiceImplTest extends WifiBaseTest {
      */
     @Test
     public void testSetWifiScoringEnabledGoesToSettingsStore() {
-        mLooper.startAutoDispatch();
-        mWifiServiceImpl.setWifiScoringEnabled(true);
-        mLooper.stopAutoDispatch();
+        when(mSettingsStore.handleWifiScoringEnabled(anyBoolean())).thenReturn(true);
+        assertTrue(mWifiServiceImpl.setWifiScoringEnabled(true));
         verify(mSettingsStore).handleWifiScoringEnabled(true);
     }
 
