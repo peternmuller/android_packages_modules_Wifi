@@ -232,6 +232,7 @@ import com.android.server.wifi.WifiServiceImpl.SoftApCallbackInternal;
 import com.android.server.wifi.coex.CoexManager;
 import com.android.server.wifi.entitlement.PseudonymInfo;
 import com.android.server.wifi.hotspot2.PasspointManager;
+import com.android.server.wifi.hotspot2.PasspointNetworkNominateHelper;
 import com.android.server.wifi.hotspot2.PasspointProvisioningTestUtil;
 import com.android.server.wifi.proto.WifiStatsLog;
 import com.android.server.wifi.proto.nano.WifiMetricsProto.UserActionEvent;
@@ -286,6 +287,7 @@ public class WifiServiceImplTest extends WifiBaseTest {
     private static final String TEST_PACKAGE_NAME_OTHER = "TestPackageOther";
     private static final String TEST_FEATURE_ID = "TestFeature";
     private static final String SYSUI_PACKAGE_NAME = "com.android.systemui";
+    private static final String CERT_INSTALLER_PACKAGE_NAME = "com.android.certinstaller";
     private static final int TEST_PID = 6789;
     private static final int TEST_PID2 = 9876;
     private static final int TEST_UID = 1200000;
@@ -470,6 +472,7 @@ public class WifiServiceImplTest extends WifiBaseTest {
     @Mock ApplicationQosPolicyRequestHandler mApplicationQosPolicyRequestHandler;
     @Mock Location mLocation;
     @Mock WifiDeviceStateChangeManager mWifiDeviceStateChangeManager;
+    @Mock PasspointNetworkNominateHelper mPasspointNetworkNominateHelper;
     @Captor ArgumentCaptor<Intent> mIntentCaptor;
     @Captor ArgumentCaptor<List> mListCaptor;
 
@@ -521,6 +524,8 @@ public class WifiServiceImplTest extends WifiBaseTest {
         when(mWifiInjector.getLinkProbeManager()).thenReturn(mLinkProbeManager);
         when(mWifiInjector.makeWifiShellCommand(any())).thenReturn(mWifiShellCommand);
         when(mWifiInjector.getAfcManager()).thenReturn(mAfcManager);
+        when(mWifiInjector.getPasspointNetworkNominateHelper())
+                .thenReturn(mPasspointNetworkNominateHelper);
         // needed to mock this to call "handleBootCompleted"
         when(mWifiInjector.getPasspointProvisionerHandlerThread())
                 .thenReturn(mock(HandlerThread.class));
@@ -815,6 +820,7 @@ public class WifiServiceImplTest extends WifiBaseTest {
         verify(mWifiDiagnostics).captureBugReportData(
                 WifiDiagnostics.REPORT_REASON_USER_ACTION);
         verify(mWifiDiagnostics).dump(any(), any(), any());
+        verify(mPasspointNetworkNominateHelper).dump(any());
     }
 
     @Test
@@ -7714,7 +7720,6 @@ public class WifiServiceImplTest extends WifiBaseTest {
         verify(mPasspointManager, never())
                 .addOrUpdateProvider(any(), anyInt(), anyString(), anyBoolean(), anyBoolean(),
                         eq(false));
-
     }
 
     /**
@@ -7820,6 +7825,42 @@ public class WifiServiceImplTest extends WifiBaseTest {
         mLooper.stopAutoDispatchAndIgnoreExceptions();
         verify(mPasspointManager).addOrUpdateProvider(any(), anyInt(), anyString(), anyBoolean(),
                 anyBoolean(), eq(false));
+    }
+
+    /**
+     * Verify that addOrUpdatePasspointConfiguration disconnects from current captive portal network
+     * when provisioned via WifiInstaller.
+     */
+    @Test
+    public void addOrUpdatePasspointConfigDisconnectsCaptivePortal() throws Exception {
+        doReturn(AppOpsManager.MODE_ALLOWED).when(mAppOpsManager)
+                .noteOp(AppOpsManager.OPSTR_CHANGE_WIFI_STATE,
+                        Process.myUid(), CERT_INSTALLER_PACKAGE_NAME);
+        when(mWifiPermissionsUtil.isTargetSdkLessThan(anyString(),
+                eq(Build.VERSION_CODES.R), anyInt())).thenReturn(false);
+        when(mWifiPermissionsUtil.isSystem(anyString(), anyInt())).thenReturn(true);
+        PasspointConfiguration config = new PasspointConfiguration();
+        HomeSp homeSp = new HomeSp();
+        homeSp.setFqdn("test.com");
+        config.setHomeSp(homeSp);
+        WifiConfiguration captivePortalConfig =
+                WifiConfigurationTestUtil.createCaptivePortalNetwork();
+        WifiInfo wifiInfo = new WifiInfo();
+        wifiInfo.setNetworkId(captivePortalConfig.networkId);
+        when(mActiveModeWarden.getConnectionInfo()).thenReturn(wifiInfo);
+        when(mWifiConfigManager.getConfiguredNetworkWithPassword(captivePortalConfig.networkId))
+                .thenReturn(captivePortalConfig);
+
+        when(mPasspointManager.addOrUpdateProvider(
+                config, Binder.getCallingUid(), CERT_INSTALLER_PACKAGE_NAME, false, true, false))
+                .thenReturn(true);
+        mLooper.startAutoDispatch();
+        assertTrue(mWifiServiceImpl.addOrUpdatePasspointConfiguration(config,
+                CERT_INSTALLER_PACKAGE_NAME));
+        mLooper.stopAutoDispatchAndIgnoreExceptions();
+        verify(mPasspointManager).addOrUpdateProvider(any(), anyInt(), anyString(), anyBoolean(),
+                anyBoolean(), eq(false));
+        verify(mClientModeManager).disconnect();
     }
 
     /**
@@ -9120,6 +9161,7 @@ public class WifiServiceImplTest extends WifiBaseTest {
         mWifiServiceImpl.dump(new FileDescriptor(), new PrintWriter(new StringWriter()), null);
         mLooper.stopAutoDispatchAndIgnoreExceptions();
         verify(mWakeupController).dump(any(), any(), any());
+        verify(mPasspointNetworkNominateHelper).dump(any());
     }
 
     /**

@@ -99,6 +99,7 @@ public class WifiInjector {
     private static final int MAX_RECENTLY_CONNECTED_NETWORK = 100;
 
     private final WifiDeviceStateChangeManager mWifiDeviceStateChangeManager;
+    private final PasspointNetworkNominateHelper mNominateHelper;
 
     private static NetworkCapabilities.Builder makeBaseNetworkCapatibilitiesFilterBuilder() {
         NetworkCapabilities.Builder builder = new NetworkCapabilities.Builder()
@@ -374,8 +375,13 @@ public class WifiInjector {
         // New config store
         mWifiConfigStore = new WifiConfigStore(mContext, wifiHandler, mClock, mWifiMetrics,
                 WifiConfigStore.createSharedFiles(mFrameworkFacade.isNiapModeOn(mContext)));
-        mWifiPseudonymManager = new WifiPseudonymManager(
-                mContext, this, mClock, wifiLooper);
+        mWifiPseudonymManager =
+                new WifiPseudonymManager(
+                        mContext,
+                        this,
+                        mClock,
+                        mContext.getSystemService(AlarmManager.class),
+                        wifiLooper);
         mWifiCarrierInfoManager = new WifiCarrierInfoManager(makeTelephonyManager(),
                 subscriptionManager, this, mFrameworkFacade, mContext,
                 mWifiConfigStore, wifiHandler, mWifiMetrics, mClock, mWifiPseudonymManager);
@@ -465,16 +471,16 @@ public class WifiInjector {
                 wifiHandler, mWifiNative, mWifiKeyStore, mClock, new PasspointObjectFactory(),
                 mWifiConfigManager, mWifiConfigStore, mSettingsStore, mWifiMetrics,
                 mWifiCarrierInfoManager, mMacAddressUtil, mWifiPermissionsUtil);
-        PasspointNetworkNominateHelper nominateHelper =
+        mNominateHelper =
                 new PasspointNetworkNominateHelper(mPasspointManager, mWifiConfigManager,
                         mConnectivityLocalLog, mWifiCarrierInfoManager, mContext.getResources(),
                         mClock);
-        mPasspointManager.setPasspointNetworkNominateHelper(nominateHelper);
+        mPasspointManager.setPasspointNetworkNominateHelper(mNominateHelper);
         mSavedNetworkNominator = new SavedNetworkNominator(
-                mWifiConfigManager, nominateHelper, mConnectivityLocalLog, mWifiCarrierInfoManager,
+                mWifiConfigManager, mNominateHelper, mConnectivityLocalLog, mWifiCarrierInfoManager,
                 mWifiPseudonymManager, mWifiPermissionsUtil, mWifiNetworkSuggestionsManager);
         mNetworkSuggestionNominator = new NetworkSuggestionNominator(mWifiNetworkSuggestionsManager,
-                mWifiConfigManager, nominateHelper, mConnectivityLocalLog, mWifiCarrierInfoManager,
+                mWifiConfigManager, mNominateHelper, mConnectivityLocalLog, mWifiCarrierInfoManager,
                 mWifiPseudonymManager, mWifiMetrics);
 
         mWifiMetrics.setPasspointManager(mPasspointManager);
@@ -1277,5 +1283,10 @@ public class WifiInjector {
     @NonNull
     public WifiDeviceStateChangeManager getWifiDeviceStateChangeManager() {
         return mWifiDeviceStateChangeManager;
+    }
+
+    @NonNull
+    public PasspointNetworkNominateHelper getPasspointNetworkNominateHelper() {
+        return mNominateHelper;
     }
 }
