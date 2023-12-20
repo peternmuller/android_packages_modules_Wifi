@@ -60,6 +60,7 @@ import static com.android.server.wifi.WifiSettingsConfigStore.SHOW_DIALOG_WHEN_T
 import static com.android.server.wifi.WifiSettingsConfigStore.WIFI_AWARE_VERBOSE_LOGGING_ENABLED;
 import static com.android.server.wifi.WifiSettingsConfigStore.WIFI_STA_FACTORY_MAC_ADDRESS;
 import static com.android.server.wifi.WifiSettingsConfigStore.WIFI_VERBOSE_LOGGING_ENABLED;
+import static com.android.server.wifi.WifiSettingsConfigStore.WIFI_WEP_ALLOWED;
 
 import android.Manifest;
 import android.annotation.AnyThread;
@@ -588,7 +589,8 @@ public class WifiServiceImpl extends BaseWifiService {
 
             mWifiInjector.getWifiScanAlwaysAvailableSettingsCompatibility().initialize();
             mWifiInjector.getWifiNotificationManager().createNotificationChannels();
-
+            // Align the value between config stroe (i.e.WifiConfigStore.xml) and WifiGlobals.
+            mWifiGlobals.setWepAllowed(mSettingsConfigStore.get(WIFI_WEP_ALLOWED));
             mContext.registerReceiver(
                     new BroadcastReceiver() {
                         @Override
@@ -8005,5 +8007,44 @@ public class WifiServiceImpl extends BaseWifiService {
                     + " Missing NETWORK_SETTINGS permission");
         }
         return mWifiNative.setMockWifiMethods(methods);
+    }
+
+    /**
+     * See {@link WifiManager#setWepAllowed(boolean)}.
+     */
+    @Override
+    public void setWepAllowed(boolean isAllowed) {
+        int callingUid = Binder.getCallingUid();
+        if (!mWifiPermissionsUtil.checkNetworkSettingsPermission(callingUid)) {
+            throw new SecurityException("Uid " + callingUid
+                    + " is not allowed to set wifi web allowed by user");
+        }
+        mLog.info("setWepAllowed=% uid=%").c(isAllowed).c(callingUid).flush();
+        mWifiThreadRunner.post(() -> {
+            mSettingsConfigStore.put(WIFI_WEP_ALLOWED, isAllowed);
+            mWifiGlobals.setWepAllowed(isAllowed);
+        });
+    }
+
+    /**
+     * See {@link WifiManager#queryWepAllowed(Executor, Consumer)}
+     */
+    @Override
+    public void queryWepAllowed(@NonNull IBooleanListener listener) {
+        if (listener == null) {
+            throw new IllegalArgumentException("listener should not be null");
+        }
+        int callingUid = Binder.getCallingUid();
+        if (!mWifiPermissionsUtil.checkNetworkSettingsPermission(callingUid)) {
+            throw new SecurityException("Uid " + callingUid
+                    + " is not allowed to get wifi web allowed by user");
+        }
+        mWifiThreadRunner.post(() -> {
+            try {
+                listener.onResult(mSettingsConfigStore.get(WIFI_WEP_ALLOWED));
+            } catch (RemoteException e) {
+                Log.e(TAG, e.getMessage());
+            }
+        });
     }
 }
