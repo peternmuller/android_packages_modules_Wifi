@@ -698,7 +698,6 @@ public class WifiServiceImpl extends BaseWifiService {
                 mWifiTetheringDisallowed = mUserManager.getUserRestrictions()
                         .getBoolean(UserManager.DISALLOW_WIFI_TETHERING);
             }
-            setPulledAtomCallbacks();
 
             // Adding optimizations of only receiving broadcasts when wifi is enabled
             // can result in race conditions when apps toggle wifi in the background
@@ -709,7 +708,6 @@ public class WifiServiceImpl extends BaseWifiService {
             mActiveModeWarden.start();
             registerForCarrierConfigChange();
             mWifiInjector.getAdaptiveConnectivityEnabledSettingObserver().initialize();
-            mWifiInjector.getWifiDeviceStateChangeManager().handleBootCompleted();
             mIsWifiServiceStarted = true;
         });
     }
@@ -859,6 +857,8 @@ public class WifiServiceImpl extends BaseWifiService {
                 mWifiConfigManager.updateTrustOnFirstUseFlag(isTrustOnFirstUseSupported());
             }
             updateVerboseLoggingEnabled();
+            mWifiInjector.getWifiDeviceStateChangeManager().handleBootCompleted();
+            setPulledAtomCallbacks();
         });
     }
 
@@ -1625,7 +1625,7 @@ public class WifiServiceImpl extends BaseWifiService {
         int uid = Binder.getCallingUid();
         boolean privileged = isSettingsOrSuw(Binder.getCallingPid(), uid);
         return WifiApConfigStore.validateApWifiConfiguration(
-                config, privileged, mContext);
+                config, privileged, mContext, mWifiNative);
     }
 
     /**
@@ -1763,7 +1763,7 @@ public class WifiServiceImpl extends BaseWifiService {
         SoftApConfiguration softApConfig = apConfig.getSoftApConfiguration();
         if (softApConfig != null
                 && (!WifiApConfigStore.validateApWifiConfiguration(
-                    softApConfig, privileged, mContext))) {
+                    softApConfig, privileged, mContext, mWifiNative))) {
             Log.e(TAG, "Invalid SoftApConfiguration");
             return false;
         }
@@ -2885,7 +2885,7 @@ public class WifiServiceImpl extends BaseWifiService {
         SoftApConfiguration softApConfig = ApConfigUtil.fromWifiConfiguration(wifiConfig);
         if (softApConfig == null) return false;
         if (!WifiApConfigStore.validateApWifiConfiguration(
-                softApConfig, false, mContext)) {
+                softApConfig, false, mContext, mWifiNative)) {
             Log.e(TAG, "Invalid WifiConfiguration");
             return false;
         }
@@ -2913,7 +2913,8 @@ public class WifiServiceImpl extends BaseWifiService {
         }
         mLog.info("setSoftApConfiguration uid=%").c(uid).flush();
         if (softApConfig == null) return false;
-        if (WifiApConfigStore.validateApWifiConfiguration(softApConfig, privileged, mContext)) {
+        if (WifiApConfigStore.validateApWifiConfiguration(softApConfig, privileged, mContext,
+                mWifiNative)) {
             mWifiApConfigStore.setApConfiguration(softApConfig);
             // Send the message for AP config update after the save is done.
             mActiveModeWarden.updateSoftApConfiguration(softApConfig);

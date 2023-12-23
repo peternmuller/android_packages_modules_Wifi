@@ -362,6 +362,9 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
     // This is is used to track the number of TDLS peers enabled in driver via enableTdls()
     private Set<String> mEnabledTdlsPeers = new ArraySet<>();
 
+    // Tracks the last NUD failure timestamp, and number of failures.
+    private Pair<Long, Integer> mNudFailureCounter = new Pair<>(0L, 0);
+
     /**
      * Method to clear {@link #mTargetBssid} and reset the current connected network's
      * bssid in wpa_supplicant after a roam/connect attempt.
@@ -3517,6 +3520,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         mLastSubId = SubscriptionManager.INVALID_SUBSCRIPTION_ID;
         mCurrentConnectionDetectedCaptivePortal = false;
         mLastSimBasedConnectionCarrierName = null;
+        mNudFailureCounter = new Pair<>(0L, 0);
         checkAbnormalDisconnectionAndTakeBugReport();
         mWifiScoreCard.resetConnectionState(mInterfaceName);
         updateLayer2Information();
@@ -4030,6 +4034,21 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
             handleIpReachabilityLost(lossReason);
             return;
         }
+        final long curTime = mClock.getElapsedSinceBootMillis();
+        if (curTime - mNudFailureCounter.first <= mWifiGlobals.getRepeatedNudFailuresWindowMs()) {
+            mNudFailureCounter = new Pair<>(curTime, mNudFailureCounter.second + 1);
+        } else {
+            mNudFailureCounter = new Pair<>(curTime, 1);
+        }
+        if (mNudFailureCounter.second >= mWifiGlobals.getRepeatedNudFailuresThreshold()) {
+            // Disable and disconnect due to repeated NUD failures within limited time window.
+            mWifiConfigManager.updateNetworkSelectionStatus(config.networkId,
+                    WifiConfiguration.NetworkSelectionStatus.DISABLED_REPEATED_NUD_FAILURES);
+            handleIpReachabilityLost(lossReason);
+            mNudFailureCounter = new Pair<>(0L, 0);
+            return;
+        }
+
         final NetworkAgentConfig naConfig = getNetworkAgentConfigInternal(config);
         final NetworkCapabilities nc = getCapabilities(
                 getConnectedWifiConfigurationInternal(), getConnectedBssidInternal());
@@ -8176,6 +8195,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
                             .withPreDhcpAction()
                             .withPreconnection()
                             .withDisplayName(config.SSID)
+                            .withCreatorUid(config.creatorUid)
                             .withLayer2Information(layer2Info)
                             .withProvisioningTimeoutMs(mRemainConnectedAfterIpProvisionTimeout ? 0 :
                                     PROVISIONING_TIMEOUT_FILS_CONNECTION_MS);
@@ -8230,6 +8250,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
                     .withNetwork(network)
                     .withDisplayName(config.SSID)
                     .withScanResultInfo(scanResultInfo)
+                    .withCreatorUid(config.creatorUid)
                     .withLayer2Information(layer2Info);
             } else {
                 StaticIpConfiguration staticIpConfig = config.getStaticIpConfiguration();
@@ -8237,6 +8258,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
                         .withStaticConfiguration(staticIpConfig)
                         .withNetwork(network)
                         .withDisplayName(config.SSID)
+                        .withCreatorUid(config.creatorUid)
                         .withLayer2Information(layer2Info);
             }
             if (mContext.getResources().getBoolean(R.bool.config_wifiEnableApfOnNonPrimarySta)
