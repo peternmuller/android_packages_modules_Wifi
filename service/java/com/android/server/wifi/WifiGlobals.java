@@ -75,9 +75,12 @@ public class WifiGlobals {
     private final int mClientRssiMonitorHysteresisDb;
     private boolean mDisableFirmwareRoamingInIdleMode = false;
     private final boolean mIsSupportMultiInternetDual5G;
+    private final int mRepeatedNudFailuresThreshold;
+    private final int mRepeatedNudFailuresWindowMs;
     private final boolean mAdjustPollRssiIntervalEnabled;
     private final boolean mWifiInterfaceAddedSelfRecoveryEnabled;
     private final int mNetworkNotFoundEventThreshold;
+    private final boolean mIsBackgroundScanSupported;
     private final boolean mIsWepDeprecated;
     private final boolean mIsWpaPersonalDeprecated;
     // This is read from the overlay, cache it after boot up.
@@ -140,6 +143,10 @@ public class WifiGlobals {
                 .getBoolean(R.bool.config_wifiDisableFirmwareRoamingInIdleMode);
         mIsSupportMultiInternetDual5G = mContext.getResources().getBoolean(
                 R.bool.config_wifiAllowMultiInternetConnectDual5GFrequency);
+        mRepeatedNudFailuresThreshold = mContext.getResources()
+                .getInteger(R.integer.config_wifiDisableReasonRepeatedNudFailuresThreshold);
+        mRepeatedNudFailuresWindowMs = mContext.getResources()
+                .getInteger(R.integer.config_wifiDisableReasonRepeatedNudFailuresWindowMs);
         mWifiInterfaceAddedSelfRecoveryEnabled = mContext.getResources().getBoolean(
                 R.bool.config_wifiInterfaceAddedSelfRecoveryEnabled);
 	mIsDisconnectOnlyOnInitialIpReachability = mContext.getResources()
@@ -150,6 +157,8 @@ public class WifiGlobals {
                 R.bool.config_wifiDisableNudDisconnectsForWapiInSpecificCc);
         mNetworkNotFoundEventThreshold = mContext.getResources().getInteger(
                 R.integer.config_wifiNetworkNotFoundEventThreshold);
+        mIsBackgroundScanSupported = mContext.getResources()
+                .getBoolean(R.bool.config_wifi_background_scan_support);
         mIsWepDeprecated = mContext.getResources()
                 .getBoolean(R.bool.config_wifiWepDeprecated);
         mIsWpaPersonalDeprecated = mContext.getResources()
@@ -368,6 +377,20 @@ public class WifiGlobals {
     }
 
     /**
+     * Get number of repeated NUD failures needed to disable a network.
+     */
+    public int getRepeatedNudFailuresThreshold() {
+        return mRepeatedNudFailuresThreshold;
+    }
+
+    /**
+     * Get the time window in millis to count for repeated NUD failures.
+     */
+    public int getRepeatedNudFailuresWindowMs() {
+        return mRepeatedNudFailuresWindowMs;
+    }
+
+    /**
      * Helper method to check if the device may not connect to the configuration
      * due to deprecated security type
      */
@@ -545,6 +568,13 @@ public class WifiGlobals {
     }
 
     /**
+     * Get whether background scan is supported.
+     */
+    public boolean isBackgroundScanSupported() {
+        return mIsBackgroundScanSupported;
+    };
+
+    /**
      * Get whether to temporarily disable a unwanted network that has low RSSI.
      */
     public boolean disableUnwantedNetworkOnLowRssi() {
@@ -612,11 +642,14 @@ public class WifiGlobals {
                 + mWifiInterfaceAddedSelfRecoveryEnabled);
         pw.println("mDisableUnwantedNetworkOnLowRssi=" + mDisableUnwantedNetworkOnLowRssi);
         pw.println("mNetworkNotFoundEventThreshold=" + mNetworkNotFoundEventThreshold);
+        pw.println("mIsBackgroundScanSupported=" + mIsBackgroundScanSupported);
         pw.println("mIsWepDeprecated=" + mIsWepDeprecated);
         pw.println("mIsWpaPersonalDeprecated=" + mIsWpaPersonalDeprecated);
         pw.println("mIsWepAllowed=" + mIsWepAllowed.get());
         pw.println("mDisableFirmwareRoamingInIdleMode=" + mDisableFirmwareRoamingInIdleMode);
         pw.println("mIsDisconnectOnlyOnInitialIpReachability=" + mIsDisconnectOnlyOnInitialIpReachability);
+        pw.println("mRepeatedNudFailuresThreshold=" + mRepeatedNudFailuresThreshold);
+        pw.println("mRepeatedNudFailuresWindowMs=" + mRepeatedNudFailuresWindowMs);
         pw.println("mCarrierSpecificEapFailureConfigMapPerCarrierId mapping below:");
         for (int i = 0; i < mCarrierSpecificEapFailureConfigMapPerCarrierId.size(); i++) {
             int carrierId = mCarrierSpecificEapFailureConfigMapPerCarrierId.keyAt(i);
