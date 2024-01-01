@@ -3684,7 +3684,7 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                                 P2pConnectionEvent.CLF_CANCEL);
                         // Notify the peer about the rejection.
                         int delay = 0;
-                        if (mSavedPeerConfig != null) {
+                        if (!TextUtils.isEmpty(mSavedPeerConfig.deviceAddress)) {
                             mWifiNative.p2pStopFind();
                             delay = sendP2pRejection();
                         }
@@ -3694,7 +3694,7 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                                         P2P_REJECTION_RESUME_AFTER_DELAY,
                                         ++sP2pRejectionResumeAfterDelayIndex,
                                         WifiP2pManager.CANCEL_CONNECT,
-                                        message),
+                                        Message.obtain(message)),
                                 delay);
                         break;
                     case WifiP2pMonitor.P2P_GO_NEGOTIATION_SUCCESS_EVENT:
@@ -3738,7 +3738,7 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                         if (mVerboseLoggingEnabled) {
                             logd("User rejected negotiation " + mSavedPeerConfig);
                         }
-                        if (mSavedPeerConfig != null) {
+                        if (!TextUtils.isEmpty(mSavedPeerConfig.deviceAddress)) {
                             WifiP2pDevice dev = fetchCurrentDeviceDetails(mSavedPeerConfig);
                             boolean join = (dev != null && dev.isGroupOwner())
                                     || mJoinExistingGroup;
@@ -6933,6 +6933,11 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
             IBinder binder = extras.getBinder(WifiP2pManager.CALLING_BINDER);
             if (!checkExternalApproverCaller(message, binder, devAddr,
                     "SET_CONNECTION_REQUEST_RESULT")) {
+                return false;
+            }
+
+            if (TextUtils.isEmpty(mSavedPeerConfig.deviceAddress)) {
+                logd("Saved peer address is empty");
                 return false;
             }
 
