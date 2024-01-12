@@ -29,8 +29,6 @@ import android.util.SparseArray;
 
 import androidx.annotation.Nullable;
 
-import com.android.wifi.flags.Flags;
-
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.util.Arrays;
@@ -1182,7 +1180,7 @@ public final class WifiUsabilityStatsEntry implements Parcelable {
      * @return total time CCA is on busy status for the link in ms.
      * @throws NoSuchElementException if linkId is invalid.
      */
-    @FlaggedApi(Flags.FLAG_ADD_CHANNEL_STATS_PER_LINK)
+    @FlaggedApi("com.android.wifi.flags.add_channel_stats_per_link")
     public long getTotalCcaBusyFreqTimeMillis(int linkId) {
         if (mLinkStats.contains(linkId)) return mLinkStats.get(linkId).mTotalCcaBusyFreqTimeMillis;
         throw new NoSuchElementException("linkId is invalid - " + linkId);
@@ -1204,7 +1202,7 @@ public final class WifiUsabilityStatsEntry implements Parcelable {
      * @return The total radio on time for the link in ms.
      * @throws NoSuchElementException if linkId is invalid.
      */
-    @FlaggedApi(Flags.FLAG_ADD_CHANNEL_STATS_PER_LINK)
+    @FlaggedApi("com.android.wifi.flags.add_channel_stats_per_link")
     public long getTotalRadioOnFreqTimeMillis(int linkId) {
         if (mLinkStats.contains(linkId)) return mLinkStats.get(linkId).mTotalRadioOnFreqTimeMillis;
         throw new NoSuchElementException("linkId is invalid - " + linkId);

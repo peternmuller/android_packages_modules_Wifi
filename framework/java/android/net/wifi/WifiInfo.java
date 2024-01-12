@@ -48,7 +48,6 @@ import androidx.annotation.RequiresApi;
 
 import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.Inet4AddressUtils;
-import com.android.wifi.flags.Flags;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -730,7 +729,7 @@ public class WifiInfo implements TransportInfo, Parcelable {
          * Set the subscription ID.
          * @see WifiInfo#getSubscriptionId()
          */
-        @FlaggedApi(Flags.FLAG_ADD_SUBSCRIPTION_ID)
+        @FlaggedApi("com.android.wifi.flags.add_subscription_id")
         @NonNull
         public Builder setSubscriptionId(int subId) {
             mWifiInfo.setSubscriptionId(subId);
