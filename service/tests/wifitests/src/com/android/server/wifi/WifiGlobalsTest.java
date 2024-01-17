@@ -137,11 +137,57 @@ public class WifiGlobalsTest extends WifiBaseTest {
         assertEquals(true, mWifiGlobals.isSaveFactoryMacToConfigStoreEnabled());
     }
 
+    /**
+     * Verify background scan is supported
+     */
+    @Test
+    public void testBackgroundScanSupported() throws Exception {
+        mResources.setBoolean(R.bool.config_wifi_background_scan_support, false);
+        mWifiGlobals = new WifiGlobals(mContext);
+        assertFalse(mWifiGlobals.isBackgroundScanSupported());
+
+        mResources.setBoolean(R.bool.config_wifi_background_scan_support, true);
+        mWifiGlobals = new WifiGlobals(mContext);
+        assertTrue(mWifiGlobals.isBackgroundScanSupported());
+    }
+
     @Test
     public void testQuotedStringSsidPrefixParsedCorrectly() throws Exception {
         assertEquals(1, mWifiGlobals.getMacRandomizationUnsupportedSsidPrefixes().size());
         assertTrue(mWifiGlobals.getMacRandomizationUnsupportedSsidPrefixes()
                 .contains(TEST_SSID.substring(0, TEST_SSID.length() - 1)));
+    }
+
+    @Test
+    public void testLoadCarrierSpecificEapFailureConfigMap() throws Exception {
+        // Test by default there's no override data
+        assertEquals(0, mWifiGlobals.getCarrierSpecificEapFailureConfigMapSize());
+
+        // Test config with too few items don't get added.
+        mResources.setStringArray(R.array.config_wifiEapFailureConfig,
+                new String[] {"1, 2, 3"});
+        mWifiGlobals = new WifiGlobals(mContext);
+        assertEquals(0, mWifiGlobals.getCarrierSpecificEapFailureConfigMapSize());
+
+        // Test config that fail to parse to int don't get added.
+        mResources.setStringArray(R.array.config_wifiEapFailureConfig,
+                new String[] {"1839, bad_config,  1, 1, 1440"});
+        mWifiGlobals = new WifiGlobals(mContext);
+        assertEquals(0, mWifiGlobals.getCarrierSpecificEapFailureConfigMapSize());
+
+        // Test correct config
+        mResources.setStringArray(R.array.config_wifiEapFailureConfig,
+                new String[] {"1839, 1031,  1, 1, 1440"});
+        mWifiGlobals = new WifiGlobals(mContext);
+        assertEquals(1, mWifiGlobals.getCarrierSpecificEapFailureConfigMapSize());
+        WifiBlocklistMonitor.CarrierSpecificEapFailureConfig config =
+                mWifiGlobals.getCarrierSpecificEapFailureConfig(1839, 1031);
+        assertTrue(config.displayNotification);
+        assertEquals(1, config.threshold);
+        assertEquals(1440 * 60 * 1000, config.durationMs);
+
+        // Getting CarrierSpecificEapFailureConfig for an not added reason should return null.
+        assertNull(mWifiGlobals.getCarrierSpecificEapFailureConfig(1839, 999));
     }
 
 
@@ -211,5 +257,36 @@ public class WifiGlobalsTest extends WifiBaseTest {
         mResources.setStringArray(R.array.config_wifiAfcServerUrlsForCountry, new String[] {});
         mWifiGlobals = new WifiGlobals(mContext);
         assertNull(mWifiGlobals.getAfcServerUrlsForCountry("US"));
+    }
+
+    @Test
+    public void testSetWepAllowedWhenWepIsDeprecated() {
+        mResources.setBoolean(R.bool.config_wifiWepDeprecated, true);
+        mWifiGlobals = new WifiGlobals(mContext);
+        assertTrue(mWifiGlobals.isWepDeprecated());
+        assertFalse(mWifiGlobals.isWepSupported());
+
+        mWifiGlobals.setWepAllowed(true);
+        assertTrue(mWifiGlobals.isWepDeprecated());
+        assertTrue(mWifiGlobals.isWepAllowed());
+
+        mWifiGlobals.setWepAllowed(false);
+        assertTrue(mWifiGlobals.isWepDeprecated());
+        assertFalse(mWifiGlobals.isWepAllowed());
+    }
+
+    @Test
+    public void testSetWepAllowedWhenWepIsNotDeprecated() {
+        assertTrue(mWifiGlobals.isWepSupported());
+        // Default is not allow
+        assertFalse(mWifiGlobals.isWepAllowed());
+        assertTrue(mWifiGlobals.isWepDeprecated());
+        mWifiGlobals.setWepAllowed(true);
+        assertFalse(mWifiGlobals.isWepDeprecated());
+        assertTrue(mWifiGlobals.isWepAllowed());
+
+        mWifiGlobals.setWepAllowed(false);
+        assertTrue(mWifiGlobals.isWepDeprecated());
+        assertFalse(mWifiGlobals.isWepAllowed());
     }
 }

@@ -18,6 +18,7 @@ package com.android.server.wifi;
 
 import static android.net.wifi.WifiConfiguration.INVALID_NETWORK_ID;
 import static android.net.wifi.WifiConfiguration.RANDOMIZATION_NONE;
+
 import static com.android.server.wifi.ActiveModeManager.ROLE_CLIENT_PRIMARY;
 import static com.android.server.wifi.ActiveModeManager.ROLE_CLIENT_SCAN_ONLY;
 import static com.android.server.wifi.ActiveModeManager.ROLE_CLIENT_SECONDARY_LONG_LIVED;
@@ -29,10 +30,6 @@ import static com.android.server.wifi.proto.nano.WifiMetricsProto.ConnectionEven
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.app.AlarmManager;
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
 import android.net.IpConfiguration;
 import android.net.MacAddress;
 import android.net.wifi.IPnoScanResultsCallback;
@@ -380,6 +377,16 @@ public class WifiConnectivityManager {
     }
 
     /**
+     * Utility band filter method for multi-internet use-case.
+     */
+    @VisibleForTesting
+    public boolean filterMultiInternetFrequency(int primaryFreq, int secondaryFreq) {
+        return mWifiGlobals.isSupportMultiInternetDual5G()
+                ? ScanResult.isValidCombinedBandForDual5GHz(primaryFreq, secondaryFreq)
+                : ScanResult.toBand(primaryFreq) != ScanResult.toBand(secondaryFreq);
+    }
+
+    /**
      * Helper method to consolidate handling of scan results when multi internet is enabled.
      */
     private boolean handleConnectToMultiInternetConnectionInternal(
@@ -416,13 +423,16 @@ public class WifiConnectivityManager {
                 // A BSSID can only exist in one band, so when evaluating candidates, only those
                 // with a different band from the primary will be considered.
                 secondaryCmmCandidates = candidates.stream()
-                        .filter(c -> ScanResult.toBand(c.getFrequency()) != primaryBand)
+                        .filter(c -> {
+                            return filterMultiInternetFrequency(
+                                    primaryInfo.getFrequency(), c.getFrequency());
+                        })
                         .collect(Collectors.toList());
             }
         } else {
             // Only allow the candidates have the same SSID as the primary.
             secondaryCmmCandidates = candidates.stream().filter(c -> {
-                return ScanResult.toBand(c.getFrequency()) != primaryBand
+                return filterMultiInternetFrequency(primaryInfo.getFrequency(), c.getFrequency())
                         && !primaryCcm.isAffiliatedLinkBssid(c.getKey().bssid) && TextUtils.equals(
                         c.getKey().matchInfo.networkSsid, primaryInfo.getSSID())
                         && c.getKey().networkId == primaryInfo.getNetworkId()
@@ -1306,9 +1316,7 @@ public class WifiConnectivityManager {
         }
     }
 
-    /**
-     * WifiConnectivityManager constructor
-     */
+    /** WifiConnectivityManager constructor */
     WifiConnectivityManager(
             WifiContext context,
             ScoringParams scoringParams,
@@ -1336,7 +1344,8 @@ public class WifiConnectivityManager {
             WifiPermissionsUtil wifiPermissionsUtil,
             WifiCarrierInfoManager wifiCarrierInfoManager,
             WifiCountryCode wifiCountryCode,
-            @NonNull WifiDialogManager wifiDialogManager) {
+            @NonNull WifiDialogManager wifiDialogManager,
+            WifiDeviceStateChangeManager wifiDeviceStateChangeManager) {
         mContext = context;
         mScoringParams = scoringParams;
         mConfigManager = configManager;
@@ -1384,32 +1393,13 @@ public class WifiConnectivityManager {
         mInternalPnoScanListener = new WifiScannerInternal.ScanListener(mPnoScanListener,
                 mEventHandler);
         mPnoScanPasspointSsids = new ArraySet<>();
-    }
-
-    /**
-     * Register broadcast receiver
-     */
-    public void initialization() {
-        // Listen for screen state change events.
-        // TODO: We should probably add a shared broadcast receiver in the wifi stack which
-        // can used by various modules to listen to common system events. Creating multiple
-        // broadcast receivers in each class within the wifi stack is *somewhat* expensive.
-        IntentFilter filter = new IntentFilter();
-        filter.addAction(Intent.ACTION_SCREEN_ON);
-        filter.addAction(Intent.ACTION_SCREEN_OFF);
-        mContext.registerReceiver(
-                new BroadcastReceiver() {
+        wifiDeviceStateChangeManager.registerStateChangeCallback(
+                new WifiDeviceStateChangeManager.StateChangeCallback() {
                     @Override
-                    public void onReceive(Context context, Intent intent) {
-                        String action = intent.getAction();
-                        if (action.equals(Intent.ACTION_SCREEN_ON)) {
-                            handleScreenStateChanged(true);
-                        } else if (action.equals(Intent.ACTION_SCREEN_OFF)) {
-                            handleScreenStateChanged(false);
-                        }
+                    public void onScreenStateChanged(boolean screenOn) {
+                        handleScreenStateChanged(screenOn);
                     }
-                }, filter, null, mEventHandler);
-        handleScreenStateChanged(mPowerManager.isInteractive());
+                });
     }
 
     @NonNull
@@ -3110,9 +3100,7 @@ public class WifiConnectivityManager {
      */
     public void handleConnectionStateChanged(
             ConcreteClientModeManager clientModeManager, int state) {
-        List<ClientModeManager> internetConnectivityCmms =
-                mActiveModeWarden.getInternetConnectivityClientModeManagers();
-        if (!(internetConnectivityCmms.contains(clientModeManager))) {
+        if (clientModeManager.getRole() != ROLE_CLIENT_PRIMARY) {
             Log.w(TAG, "Ignoring call from non primary Mode Manager " + clientModeManager,
                     new Throwable());
             return;
@@ -3293,6 +3281,11 @@ public class WifiConnectivityManager {
             mUntrustedConnectionAllowed = allowed;
             checkAllStatesAndEnableAutoJoin();
         }
+    }
+
+    @VisibleForTesting
+    public int getWifiState() {
+        return mWifiState;
     }
 
     /**

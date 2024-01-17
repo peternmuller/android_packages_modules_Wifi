@@ -168,6 +168,7 @@ public class NetworkDetail {
     private MacAddress mMldMacAddress = null;
     private int mMloLinkId = MloLink.INVALID_MLO_LINK_ID;
     private List<MloLink> mAffiliatedMloLinks = Collections.emptyList();
+    private byte[] mDisabledSubchannelBitmap;
 
     public NetworkDetail(String bssid, ScanResult.InformationElement[] infoElements,
             List<String> anqpLines, int freq) {
@@ -303,7 +304,7 @@ public class NetworkDetail {
             }
         }
         catch (IllegalArgumentException | BufferUnderflowException | ArrayIndexOutOfBoundsException e) {
-            Log.d(Utils.hs2LogTag(getClass()), "Caught " + e);
+            Log.d(TAG, "Caught " + e);
             if (ssidOctets == null) {
                 throw new IllegalArgumentException("Malformed IE string (no SSID)", e);
             }
@@ -379,6 +380,7 @@ public class NetworkDetail {
 
         if (ehtOperation.isPresent()) {
             //TODO: include parsing of EHT_Operation to collect BW and center freq.
+            mDisabledSubchannelBitmap = ehtOperation.getDisabledSubchannelBitmap();
         }
 
         if (ehtOperation.isPresent()) {
@@ -702,6 +704,10 @@ public class NetworkDetail {
         return mAffiliatedMloLinks;
     }
 
+    public byte[] getDisabledSubchannelBitmap() {
+        return mDisabledSubchannelBitmap;
+    }
+
     @Override
     public boolean equals(Object thatObject) {
         if (this == thatObject) {
@@ -724,8 +730,8 @@ public class NetworkDetail {
     @Override
     public String toString() {
         return "NetworkInfo{SSID='" + mSSID
-                + "', HESSID=" + Utils.macToSimpleString(mHESSID)
-                + ", BSSID=" + Utils.macToSimpleString(mBSSID)
+                + "', HESSID=" + Utils.macToString(mHESSID)
+                + ", BSSID=" + Utils.macToString(mBSSID)
                 + ", StationCount=" + mStationCount
                 + ", ChannelUtilization=" + mChannelUtilization
                 + ", Capacity=" + mCapacity
@@ -737,9 +743,9 @@ public class NetworkDetail {
 
     public String toKeyString() {
         return mHESSID != 0 ?
-                "'" + mSSID + "':" + Utils.macToSimpleString(mBSSID) + " ("
-                        + Utils.macToSimpleString(mHESSID) + ")"
-                : "'" + mSSID + "':" + Utils.macToSimpleString(mBSSID);
+                "'" + mSSID + "':" + Utils.macToString(mBSSID) + " ("
+                        + Utils.macToString(mHESSID) + ")"
+                : "'" + mSSID + "':" + Utils.macToString(mBSSID);
     }
 
     public String getBSSIDString() {

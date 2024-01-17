@@ -1098,4 +1098,14 @@ public class BaseWifiService extends IWifiManager.Stub {
             Bundle extras) {
         throw new UnsupportedOperationException();
     }
+
+    @Override
+    public void setWepAllowed(boolean isAllowed) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void queryWepAllowed(@NonNull IBooleanListener listener) {
+        throw new UnsupportedOperationException();
+    }
 }

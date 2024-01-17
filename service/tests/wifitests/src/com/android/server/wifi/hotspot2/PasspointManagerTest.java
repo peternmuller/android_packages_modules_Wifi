@@ -252,7 +252,7 @@ public class PasspointManagerTest extends WifiBaseTest {
         initMocks(this);
         when(mWifiInjector.getDeviceConfigFacade()).thenReturn(mDeviceConfigFacade);
         when(mObjectFactory.makeAnqpCache(mClock)).thenReturn(mAnqpCache);
-        when(mObjectFactory.makeANQPRequestManager(any(), eq(mClock)))
+        when(mObjectFactory.makeANQPRequestManager(any(), eq(mClock), any(), any()))
                 .thenReturn(mAnqpRequestManager);
         when(mObjectFactory.makeOsuNetworkConnection(any(Context.class)))
                 .thenReturn(mOsuNetworkConnection);
@@ -279,7 +279,7 @@ public class PasspointManagerTest extends WifiBaseTest {
         when(mWifiSettingsStore.isWifiPasspointEnabled())
                 .thenReturn(mConfigSettingsPasspointEnabled);
         mLooper = new TestLooper();
-        mHandler = new RunnerHandler(mLooper.getLooper(), 100, new LocalLog(128), mWifiMetrics);
+        mHandler = new RunnerHandler(mLooper.getLooper(), 100, new LocalLog(128));
         mWifiCarrierInfoManager = new WifiCarrierInfoManager(mTelephonyManager,
                 mSubscriptionManager, mWifiInjector, mock(FrameworkFacade.class),
                 mock(WifiContext.class), mWifiConfigStore, mHandler, mWifiMetrics, mClock,

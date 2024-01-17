@@ -57,6 +57,8 @@ import static android.net.wifi.WifiManager.WIFI_FEATURE_PASSPOINT_TERMS_AND_COND
 import static android.net.wifi.WifiManager.WIFI_FEATURE_SCANNER;
 import static android.net.wifi.WifiManager.WIFI_FEATURE_T2LM_NEGOTIATION;
 import static android.net.wifi.WifiManager.WIFI_FEATURE_TRUST_ON_FIRST_USE;
+import static android.net.wifi.WifiManager.WIFI_FEATURE_WEP;
+import static android.net.wifi.WifiManager.WIFI_FEATURE_WPA_PERSONAL;
 import static android.net.wifi.WifiManager.WIFI_FEATURE_WPA3_SAE;
 import static android.net.wifi.WifiManager.WIFI_FEATURE_WPA3_SUITE_B;
 import static android.net.wifi.WifiManager.WpsCallback;
@@ -3582,6 +3584,22 @@ public class WifiManagerTest {
         verify(mWifiService).flushPasspointAnqpCache(anyString());
     }
 
+    @Test
+    public void testSetPnoScanState() throws Exception {
+        mWifiManager.setPnoScanState(WifiManager.PNO_SCAN_STATE_DISABLED_UNTIL_WIFI_TOGGLE);
+        verify(mWifiService).setPnoScanEnabled(false, true, TEST_PACKAGE_NAME);
+
+        mWifiManager.setPnoScanState(WifiManager.PNO_SCAN_STATE_DISABLED_UNTIL_REBOOT);
+        verify(mWifiService).setPnoScanEnabled(false, false, TEST_PACKAGE_NAME);
+
+        mWifiManager.setPnoScanState(WifiManager.PNO_SCAN_STATE_ENABLED);
+        verify(mWifiService).setPnoScanEnabled(eq(true), anyBoolean(), any());
+
+        assertThrows(IllegalArgumentException.class, () -> mWifiManager.setPnoScanState(999));
+    }
+
+
+
     /**
      * Test behavior of isDecoratedIdentitySupported
      */
@@ -4090,5 +4108,54 @@ public class WifiManagerTest {
         assertFalse(mWifiManager.isVerboseLoggingEnabled());
         when(mWifiService.getVerboseLoggingLevel()).thenReturn(VERBOSE_LOGGING_LEVEL_DISABLED);
         assertFalse(mWifiManager.isVerboseLoggingEnabled());
+    }
+
+    /**
+     * Test behavior of isWepSupported
+     */
+    @Test
+    public void testIsWepSupported() throws Exception {
+        when(mWifiService.getSupportedFeatures())
+                .thenReturn(new Long(WIFI_FEATURE_WEP));
+        assertTrue(mWifiManager.isWepSupported());
+        when(mWifiService.getSupportedFeatures())
+                .thenReturn(new Long(~WIFI_FEATURE_WEP));
+        assertFalse(mWifiManager.isWepSupported());
+    }
+
+    /**
+     * Test behavior of isWpaPersonalSupported
+     */
+    @Test
+    public void testIsWpaPersonalSupported() throws Exception {
+        when(mWifiService.getSupportedFeatures())
+                .thenReturn(new Long(WIFI_FEATURE_WPA_PERSONAL));
+        assertTrue(mWifiManager.isWpaPersonalSupported());
+        when(mWifiService.getSupportedFeatures())
+                .thenReturn(new Long(~WIFI_FEATURE_WPA_PERSONAL));
+        assertFalse(mWifiManager.isWpaPersonalSupported());
+    }
+
+    @Test
+    public void testSetWepAllowed() throws Exception {
+        mWifiManager.setWepAllowed(true);
+        verify(mWifiService).setWepAllowed(true);
+        mWifiManager.setWepAllowed(false);
+        verify(mWifiService).setWepAllowed(false);
+    }
+
+    @Test
+    public void testQueryWepAllowed() throws Exception {
+        Consumer<Boolean> resultsSetCallback = mock(Consumer.class);
+        SynchronousExecutor executor = mock(SynchronousExecutor.class);
+        // Null executor/callback exception.
+        assertThrows("null executor should trigger exception", NullPointerException.class,
+                () -> mWifiManager.queryWepAllowed(null, resultsSetCallback));
+        assertThrows("null listener should trigger exception", NullPointerException.class,
+                () -> mWifiManager.queryWepAllowed(executor, null));
+        // Set and verify.
+        mWifiManager.queryWepAllowed(executor, resultsSetCallback);
+        verify(mWifiService).queryWepAllowed(
+                any(IBooleanListener.Stub.class));
     }
 }

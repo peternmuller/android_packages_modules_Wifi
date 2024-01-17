@@ -16,14 +16,13 @@
 
 package com.android.server.wifi;
 
-import static android.content.Intent.ACTION_SCREEN_OFF;
-import static android.content.Intent.ACTION_SCREEN_ON;
 import static com.android.server.wifi.ActiveModeManager.ROLE_CLIENT_PRIMARY;
 import static com.android.server.wifi.ActiveModeManager.ROLE_CLIENT_SCAN_ONLY;
 import static com.android.server.wifi.ActiveModeManager.ROLE_CLIENT_SECONDARY_LONG_LIVED;
 import static com.android.server.wifi.ActiveModeManager.ROLE_CLIENT_SECONDARY_TRANSIENT;
 import static com.android.server.wifi.ClientModeImpl.WIFI_WORK_SOURCE;
 import static com.android.server.wifi.WifiConfigurationTestUtil.generateWifiConfig;
+
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -61,7 +60,6 @@ import android.app.AlarmManager;
 import android.app.test.MockAnswerUtil.AnswerWithArguments;
 import android.app.test.TestAlarmManager;
 import android.content.BroadcastReceiver;
-import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.net.IpConfiguration;
 import android.net.MacAddress;
@@ -332,6 +330,7 @@ public class WifiConnectivityManagerTest extends WifiBaseTest {
     @Mock WifiCandidates.Candidate mCandidate2;
     @Mock WifiCandidates.Candidate mCandidate3;
     @Mock WifiCandidates.Candidate mCandidate4;
+    @Mock WifiDeviceStateChangeManager mWifiDeviceStateChangeManager;
     private WifiConfiguration mCandidateWifiConfig1;
     private WifiConfiguration mCandidateWifiConfig2;
     private List<WifiCandidates.Candidate> mCandidateList;
@@ -342,6 +341,11 @@ public class WifiConnectivityManagerTest extends WifiBaseTest {
             mSuggestionUpdateListenerCaptor;
     @Captor ArgumentCaptor<ActiveModeWarden.ModeChangeCallback> mModeChangeCallbackCaptor;
     @Captor ArgumentCaptor<BroadcastReceiver> mBroadcastReceiverCaptor;
+
+    @Captor
+    ArgumentCaptor<WifiDeviceStateChangeManager.StateChangeCallback>
+            mStateChangeCallbackArgumentCaptor;
+
     @Captor ArgumentCaptor<MultiInternetManager.ConnectionStatusListener>
             mMultiInternetConnectionStatusListenerCaptor;
     @Captor ArgumentCaptor<WifiDialogManager.SimpleDialogCallback> mSimpleDialogCallbackCaptor;
@@ -415,7 +419,7 @@ public class WifiConnectivityManagerTest extends WifiBaseTest {
         private Message mMessage;
 
         TestHandler(Looper looper) {
-            super(looper, 100, new LocalLog(128), mWifiMetrics);
+            super(looper, 100, new LocalLog(128));
         }
 
         public List<Long> getIntervals() {
@@ -604,22 +608,42 @@ public class WifiConnectivityManagerTest extends WifiBaseTest {
     }
 
     WifiConnectivityManager createConnectivityManager() {
-        WifiConnectivityManager wCm = new WifiConnectivityManager(mContext, mScoringParams,
-                mWifiConfigManager, mWifiNetworkSuggestionsManager,
-                mWifiNS, mWifiConnectivityHelper,
-                mWifiLastResortWatchdog, mOpenNetworkNotifier,
-                mWifiMetrics, mTestHandler, mClock,
-                mLocalLog, mWifiScoreCard, mWifiBlocklistMonitor, mWifiChannelUtilization,
-                mPasspointManager, mMultiInternetManager, mDeviceConfigFacade, mActiveModeWarden,
-                mFacade, mWifiGlobals, mExternalPnoScanRequestManager, mSsidTranslator,
-                mWifiPermissionsUtil, mWifiCarrierInfoManager, mWifiCountryCode,
-                mWifiDialogManager);
-        wCm.initialization();
+        WifiConnectivityManager wCm =
+                new WifiConnectivityManager(
+                        mContext,
+                        mScoringParams,
+                        mWifiConfigManager,
+                        mWifiNetworkSuggestionsManager,
+                        mWifiNS,
+                        mWifiConnectivityHelper,
+                        mWifiLastResortWatchdog,
+                        mOpenNetworkNotifier,
+                        mWifiMetrics,
+                        mTestHandler,
+                        mClock,
+                        mLocalLog,
+                        mWifiScoreCard,
+                        mWifiBlocklistMonitor,
+                        mWifiChannelUtilization,
+                        mPasspointManager,
+                        mMultiInternetManager,
+                        mDeviceConfigFacade,
+                        mActiveModeWarden,
+                        mFacade,
+                        mWifiGlobals,
+                        mExternalPnoScanRequestManager,
+                        mSsidTranslator,
+                        mWifiPermissionsUtil,
+                        mWifiCarrierInfoManager,
+                        mWifiCountryCode,
+                        mWifiDialogManager,
+                        mWifiDeviceStateChangeManager);
         mLooper.dispatchAll();
         verify(mActiveModeWarden, atLeastOnce()).registerModeChangeCallback(
                 mModeChangeCallbackCaptor.capture());
-        verify(mContext, atLeastOnce()).registerReceiver(
-                mBroadcastReceiverCaptor.capture(), any(), any(), any());
+        verify(mWifiDeviceStateChangeManager, atLeastOnce())
+                .registerStateChangeCallback(mStateChangeCallbackArgumentCaptor.capture());
+        setScreenState(false);
         verify(mWifiConfigManager, atLeastOnce()).addOnNetworkUpdateListener(
                 mNetworkUpdateListenerCaptor.capture());
         verify(mWifiNetworkSuggestionsManager, atLeastOnce()).addOnSuggestionUpdateListener(
@@ -716,6 +740,8 @@ public class WifiConnectivityManagerTest extends WifiBaseTest {
         mWifiConnectivityManager.handleConnectionStateChanged(
                 mPrimaryClientModeManager,
                 WifiConnectivityManager.WIFI_STATE_DISCONNECTED);
+        assertEquals(WifiConnectivityManager.WIFI_STATE_DISCONNECTED,
+                mWifiConnectivityManager.getWifiState());
         mLooper.dispatchAll();
         verify(mPrimaryClientModeManager).startConnectToNetwork(
                 CANDIDATE_NETWORK_ID, Process.WIFI_UID, "any");
@@ -723,6 +749,22 @@ public class WifiConnectivityManagerTest extends WifiBaseTest {
         verify(mActiveModeWarden).stopAllClientModeManagersInRole(ROLE_CLIENT_SECONDARY_TRANSIENT);
         verify(mActiveModeWarden, never()).requestSecondaryTransientClientModeManager(
                 any(), any(), any(), any());
+
+        // Verify a state change from secondaryCmm will get ignored and not change wifi state
+        ConcreteClientModeManager secondaryCmm = mock(ConcreteClientModeManager.class);
+        when(secondaryCmm.getRole()).thenReturn(ROLE_CLIENT_SECONDARY_LONG_LIVED);
+        mWifiConnectivityManager.handleConnectionStateChanged(
+                secondaryCmm,
+                WifiConnectivityManager.WIFI_STATE_TRANSITIONING);
+        assertEquals(WifiConnectivityManager.WIFI_STATE_DISCONNECTED,
+                mWifiConnectivityManager.getWifiState());
+
+        // Verify state change from primary updates the state correctly
+        mWifiConnectivityManager.handleConnectionStateChanged(
+                mPrimaryClientModeManager,
+                WifiConnectivityManager.WIFI_STATE_CONNECTED);
+        assertEquals(WifiConnectivityManager.WIFI_STATE_CONNECTED,
+                mWifiConnectivityManager.getWifiState());
     }
 
     /** Don't crash if allocated a null ClientModeManager. */
@@ -4882,6 +4924,44 @@ public class WifiConnectivityManagerTest extends WifiBaseTest {
         verify(mPrimaryClientModeManager, times(0)).startRoamToNetwork(anyInt(), anyObject());
     }
 
+    @Test
+    public void testMultiInternetSimultaneous5GHz() {
+        // Enable dual 5GHz multi-internet mode
+        when(mWifiGlobals.isSupportMultiInternetDual5G()).thenReturn(true);
+
+        // 2.4GHz + 5GHz should be allowed
+        assertTrue(mWifiConnectivityManager.filterMultiInternetFrequency(TEST_FREQUENCY,
+                TEST_FREQUENCY_5G));
+
+        // 5GHz low + 5GHz high should be allowed
+        assertTrue(mWifiConnectivityManager.filterMultiInternetFrequency(
+                ScanResult.BAND_5_GHZ_LOW_HIGHEST_FREQ_MHZ,
+                ScanResult.BAND_5_GHZ_HIGH_LOWEST_FREQ_MHZ));
+
+        // 5GHz low + other 5GHz (that's neither low nor high) should not be allowed
+        assertFalse(mWifiConnectivityManager.filterMultiInternetFrequency(
+                ScanResult.BAND_5_GHZ_LOW_HIGHEST_FREQ_MHZ,
+                ScanResult.BAND_5_GHZ_HIGH_LOWEST_FREQ_MHZ - 1));
+
+        // 2 frequencies in 5GHz low band should not be allowed
+        assertFalse(mWifiConnectivityManager.filterMultiInternetFrequency(
+                ScanResult.BAND_5_GHZ_LOW_HIGHEST_FREQ_MHZ,
+                ScanResult.BAND_5_GHZ_LOW_HIGHEST_FREQ_MHZ - 1));
+
+        // 2 frequencies in 5GHz high band should not be allowed
+        assertFalse(mWifiConnectivityManager.filterMultiInternetFrequency(
+                ScanResult.BAND_5_GHZ_HIGH_LOWEST_FREQ_MHZ,
+                ScanResult.BAND_5_GHZ_HIGH_LOWEST_FREQ_MHZ + 1));
+
+        // Disable dual 5GHz multi-internet mode
+        when(mWifiGlobals.isSupportMultiInternetDual5G()).thenReturn(false);
+
+        // 5GHz low + 5GHz high should no longer be allowed
+        assertFalse(mWifiConnectivityManager.filterMultiInternetFrequency(
+                ScanResult.BAND_5_GHZ_LOW_HIGHEST_FREQ_MHZ,
+                ScanResult.BAND_5_GHZ_HIGH_LOWEST_FREQ_MHZ));
+    }
+
     /**
      *  Dump local log buffer.
      *
@@ -5980,9 +6060,9 @@ public class WifiConnectivityManagerTest extends WifiBaseTest {
         mLooper.dispatchAll();
         List<WifiNetworkSelector.ClientModeManagerState> expectedCmmStates =
                 Arrays.asList(new WifiNetworkSelector.ClientModeManagerState(
-                                "wlan0", false, true, wifiInfo1),
+                                "wlan0", false, true, wifiInfo1, false),
                         new WifiNetworkSelector.ClientModeManagerState(
-                                "wlan1", false, true, wifiInfo2));
+                                "wlan1", false, true, wifiInfo2, false));
         verify(mWifiNS).getCandidatesFromScan(any(), any(),
                 eq(expectedCmmStates), anyBoolean(), anyBoolean(), anyBoolean(), any(),
                 anyBoolean());
@@ -6017,9 +6097,9 @@ public class WifiConnectivityManagerTest extends WifiBaseTest {
         mLooper.dispatchAll();
         List<WifiNetworkSelector.ClientModeManagerState> expectedCmmStates =
                 Arrays.asList(new WifiNetworkSelector.ClientModeManagerState(
-                        "wlan0", false, true, wifiInfo1),
+                        "wlan0", false, true, wifiInfo1, false),
                 new WifiNetworkSelector.ClientModeManagerState(
-                        "unknown", false, true, new WifiInfo()));
+                        "unknown", false, true, new WifiInfo(), false));
         verify(mWifiNS).getCandidatesFromScan(any(), any(),
                 eq(expectedCmmStates), anyBoolean(), anyBoolean(), anyBoolean(), any(),
                 anyBoolean());
@@ -6076,10 +6156,10 @@ public class WifiConnectivityManagerTest extends WifiBaseTest {
 
     private void setScreenState(boolean screenOn) {
         InOrder inOrder = inOrder(mWifiNS);
-        BroadcastReceiver broadcastReceiver = mBroadcastReceiverCaptor.getValue();
-        assertNotNull(broadcastReceiver);
-        Intent intent = new Intent(screenOn  ? ACTION_SCREEN_ON : ACTION_SCREEN_OFF);
-        broadcastReceiver.onReceive(mContext, intent);
+        WifiDeviceStateChangeManager.StateChangeCallback callback =
+                mStateChangeCallbackArgumentCaptor.getValue();
+        assertNotNull(callback);
+        callback.onScreenStateChanged(screenOn);
         inOrder.verify(mWifiNS).setScreenState(screenOn);
     }
 }

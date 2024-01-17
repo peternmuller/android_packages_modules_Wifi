@@ -30,6 +30,7 @@ import android.content.IntentFilter;
 import android.content.res.Resources;
 import android.hardware.wifi.V1_0.IfaceType;
 import android.net.NetworkInfo;
+import android.net.wifi.OuiKeyedData;
 import android.net.wifi.WifiContext;
 import android.net.wifi.WifiScanner;
 import android.net.wifi.p2p.WifiP2pManager;
@@ -324,7 +325,7 @@ public class HalDeviceManager {
             return null;
         }
         WifiStaIface staIface = (WifiStaIface) createIface(HDM_CREATE_IFACE_STA,
-                requiredChipCapabilities, destroyedListener, handler, requestorWs);
+                requiredChipCapabilities, destroyedListener, handler, requestorWs, null);
         if (staIface != null) {
             mClientModeManagers.put(getName(staIface), concreteClientModeManager);
         }
@@ -362,14 +363,14 @@ public class HalDeviceManager {
             long requiredChipCapabilities,
             @Nullable InterfaceDestroyedListener destroyedListener, @Nullable Handler handler,
             @NonNull WorkSource requestorWs, boolean isBridged,
-            @NonNull SoftApManager softApManager) {
+            @NonNull SoftApManager softApManager, @NonNull List<OuiKeyedData> vendorData) {
         if (softApManager == null) {
             Log.e(TAG, "Cannot create AP Iface with null SoftApManager");
             return null;
         }
         WifiApIface apIface = (WifiApIface) createIface(isBridged ? HDM_CREATE_IFACE_AP_BRIDGE
                 : HDM_CREATE_IFACE_AP, requiredChipCapabilities, destroyedListener,
-                handler, requestorWs);
+                handler, requestorWs, vendorData);
         if (apIface != null) {
             mSoftApManagers.put(getName(apIface), softApManager);
         }
@@ -384,7 +385,7 @@ public class HalDeviceManager {
             @Nullable InterfaceDestroyedListener destroyedListener,
             @Nullable Handler handler, @NonNull WorkSource requestorWs) {
         WifiP2pIface iface = (WifiP2pIface) createIface(HDM_CREATE_IFACE_P2P,
-                requiredChipCapabilities, destroyedListener, handler, requestorWs);
+                requiredChipCapabilities, destroyedListener, handler, requestorWs, null);
         if (iface == null) {
             return null;
         }
@@ -411,7 +412,7 @@ public class HalDeviceManager {
     public WifiNanIface createNanIface(@Nullable InterfaceDestroyedListener destroyedListener,
             @Nullable Handler handler, @NonNull WorkSource requestorWs) {
         return (WifiNanIface) createIface(HDM_CREATE_IFACE_NAN, CHIP_CAPABILITY_ANY,
-                destroyedListener, handler, requestorWs);
+                destroyedListener, handler, requestorWs, null);
     }
 
     /**
@@ -572,7 +573,7 @@ public class HalDeviceManager {
      * Replace the requestorWs info for the associated info.
      *
      * When a new iface is requested via
-     * {@link #createIface(int, long, InterfaceDestroyedListener, Handler, WorkSource, ConcreteClientModeManager)}, the clients
+     * {@link #createIface(int, long, InterfaceDestroyedListener, Handler, WorkSource, List)}, the clients
      * pass in a worksource which includes all the apps that triggered the iface creation. However,
      * this list of apps can change during the lifetime of the iface (as new apps request the same
      * iface or existing apps release their request for the iface). This API can be invoked multiple
@@ -1617,7 +1618,7 @@ public class HalDeviceManager {
 
     private WifiHal.WifiInterface createIface(@HdmIfaceTypeForCreation int createIfaceType,
             long requiredChipCapabilities, InterfaceDestroyedListener destroyedListener,
-            Handler handler, WorkSource requestorWs) {
+            Handler handler, WorkSource requestorWs, @Nullable List<OuiKeyedData> vendorData) {
         if (mDbg) {
             Log.d(TAG, "createIface: createIfaceType=" + createIfaceType
                     + ", requiredChipCapabilities=" + requiredChipCapabilities
@@ -1649,7 +1650,7 @@ public class HalDeviceManager {
 
             return createIfaceIfPossible(
                     chipInfos, createIfaceType, requiredChipCapabilities,
-                    destroyedListener, handler, requestorWs);
+                    destroyedListener, handler, requestorWs, vendorData);
         }
     }
 
@@ -1750,7 +1751,7 @@ public class HalDeviceManager {
     private WifiHal.WifiInterface createIfaceIfPossible(
             WifiChipInfo[] chipInfos, @HdmIfaceTypeForCreation int createIfaceType,
             long requiredChipCapabilities, InterfaceDestroyedListener destroyedListener,
-            Handler handler, WorkSource requestorWs) {
+            Handler handler, WorkSource requestorWs, @Nullable List<OuiKeyedData> vendorData) {
         int targetHalIfaceType = HAL_IFACE_MAP.get(createIfaceType);
         if (VDBG) {
             Log.d(TAG, "createIfaceIfPossible: chipInfos=" + Arrays.deepToString(chipInfos)
@@ -1759,13 +1760,17 @@ public class HalDeviceManager {
                     + ", requiredChipCapabilities=" + requiredChipCapabilities
                     + ", requestorWs=" + requestorWs);
         }
+        if (vendorData != null && !vendorData.isEmpty()) {
+            Log.d(TAG, "Request includes vendor data. ifaceType=" + createIfaceType
+                    + ", vendorDataSize=" + vendorData.size());
+        }
         synchronized (mLock) {
             IfaceCreationData bestIfaceCreationProposal = getBestIfaceCreationProposal(chipInfos,
                     createIfaceType, requiredChipCapabilities, requestorWs);
 
             if (bestIfaceCreationProposal != null) {
                 WifiHal.WifiInterface iface = executeChipReconfiguration(bestIfaceCreationProposal,
-                        createIfaceType);
+                        createIfaceType, vendorData);
                 if (iface == null) {
                     // If the chip reconfiguration failed, we'll need to clean up internal state.
                     Log.e(TAG, "Teardown Wifi internal state");
@@ -2089,14 +2094,23 @@ public class HalDeviceManager {
             if (requestedCreateType == existingCreateType) {
                 return false;
             }
-            // If both the requests are privileged, the new requestor wins. The exception is for
-            // backwards compatibility with P2P Settings, prefer SoftAP over P2P for when the user
-            // enables SoftAP with P2P Settings open.
+            // If both the requests are privileged, the new requestor wins unless it's P2P against
+            // AP (for when the user enables SoftAP with P2P Settings open) or primary STA
+            // (since P2P isn't supported without STA).
             if (newRequestorWsPriority == WorkSourceHelper.PRIORITY_PRIVILEGED) {
-                if (requestedCreateType == HDM_CREATE_IFACE_P2P
-                        && (existingCreateType == HDM_CREATE_IFACE_AP
-                        || existingCreateType == HDM_CREATE_IFACE_AP_BRIDGE)) {
-                    return false;
+                if (requestedCreateType == HDM_CREATE_IFACE_P2P) {
+                    if (existingCreateType == HDM_CREATE_IFACE_AP
+                            || existingCreateType == HDM_CREATE_IFACE_AP_BRIDGE) {
+                        return false;
+                    }
+                    if (existingCreateType == HDM_CREATE_IFACE_STA) {
+                        ConcreteClientModeManager cmm = mClientModeManagers.get(
+                                existingIfaceInfo.name);
+                        if (cmm != null && (cmm.getRole()
+                                == ActiveModeManager.ROLE_CLIENT_PRIMARY)) {
+                            return false;
+                        }
+                    }
                 }
                 return true;
             }
@@ -2370,7 +2384,7 @@ public class HalDeviceManager {
      * Returns the newly created interface or a null on any error.
      */
     private WifiHal.WifiInterface executeChipReconfiguration(IfaceCreationData ifaceCreationData,
-            @HdmIfaceTypeForCreation int createIfaceType) {
+            @HdmIfaceTypeForCreation int createIfaceType, @Nullable List<OuiKeyedData> vendorData) {
         if (mDbg) {
             Log.d(TAG, "executeChipReconfiguration: ifaceCreationData=" + ifaceCreationData
                     + ", createIfaceType=" + createIfaceType);
@@ -2397,22 +2411,27 @@ public class HalDeviceManager {
                     }
                 }
 
-                boolean success = ifaceCreationData.chipInfo.chip.configureChip(
-                        ifaceCreationData.chipModeId);
-                if (!success) {
-                    Log.e(TAG, "executeChipReconfiguration: configureChip error");
-                    return null;
-                }
+                // Configure mode using the cached chip info, then reload chip info if needed
+                boolean configureChipSuccess =
+                        ifaceCreationData.chipInfo.chip.configureChip(ifaceCreationData.chipModeId);
                 if (!mIsConcurrencyComboLoadedFromDriver) {
                     WifiChipInfo[] wifiChipInfos = getAllChipInfo(true);
                     if (wifiChipInfos != null) {
                         mCachedStaticChipInfos =
                                 convertWifiChipInfoToStaticChipInfos(wifiChipInfos);
                         saveStaticChipInfoToStore(mCachedStaticChipInfos);
-                        mIsConcurrencyComboLoadedFromDriver = true;
+                        if (configureChipSuccess) {
+                            // Successful chip configuration suggests that the modes are valid
+                            Log.i(TAG, "Chip info loaded successfully from the HAL");
+                            mIsConcurrencyComboLoadedFromDriver = true;
+                        }
                     } else {
-                        Log.e(TAG, "Configured chip but could not get current chip info.");
+                        Log.e(TAG, "Could not get current chip info.");
                     }
+                }
+                if (!configureChipSuccess) {
+                    Log.e(TAG, "executeChipReconfiguration: configureChip error");
+                    return null;
                 }
             } else {
                 // remove all interfaces on the delete list
@@ -2439,10 +2458,10 @@ public class HalDeviceManager {
                     iface = ifaceCreationData.chipInfo.chip.createStaIface();
                     break;
                 case HDM_CREATE_IFACE_AP_BRIDGE:
-                    iface = ifaceCreationData.chipInfo.chip.createBridgedApIface();
+                    iface = ifaceCreationData.chipInfo.chip.createBridgedApIface(vendorData);
                     break;
                 case HDM_CREATE_IFACE_AP:
-                    iface = ifaceCreationData.chipInfo.chip.createApIface();
+                    iface = ifaceCreationData.chipInfo.chip.createApIface(vendorData);
                     break;
                 case HDM_CREATE_IFACE_P2P:
                     iface = ifaceCreationData.chipInfo.chip.createP2pIface();

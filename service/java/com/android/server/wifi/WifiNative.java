@@ -32,6 +32,7 @@ import android.net.MacAddress;
 import android.net.TrafficStats;
 import android.net.apf.ApfCapabilities;
 import android.net.wifi.CoexUnsafeChannel;
+import android.net.wifi.OuiKeyedData;
 import android.net.wifi.QosPolicyParams;
 import android.net.wifi.ScanResult;
 import android.net.wifi.SecurityParams;
@@ -1104,7 +1105,7 @@ public class WifiNative {
      */
     private String createApIface(@NonNull Iface iface, @NonNull WorkSource requestorWs,
             @SoftApConfiguration.BandType int band, boolean isBridged,
-            @NonNull SoftApManager softApManager, int type) {
+            @NonNull SoftApManager softApManager, @NonNull List<OuiKeyedData> vendorData, int type) {
         synchronized (mLock) {
             if (mWifiVendorHal.isVendorHalSupported()) {
                 // Hostapd vendor V1_2: bridge iface setup start
@@ -1118,7 +1119,7 @@ public class WifiNative {
                 // Hostapd vendor V1_2: bridge iface setup end
                 return mWifiVendorHal.createApIface(
                         new InterfaceDestoyedListenerInternal(iface.id), requestorWs,
-                        band, isBridged, softApManager);
+                        band, isBridged, softApManager, vendorData);
             } else {
                 Log.i(TAG, "Vendor Hal not supported, ignoring createApIface.");
                 return handleIfaceCreationWhenVendorHalNotSupported(iface);
@@ -1378,19 +1379,21 @@ public class WifiNative {
      * @param requestorWs Requestor worksource.
      * @param isBridged Whether or not AP interface is a bridge interface.
      * @param softApManager SoftApManager of the request.
+     * @param vendorData List of {@link OuiKeyedData} containing vendor-provided
+     *                   configuration data. Empty list indicates no vendor data.
      * @return Returns the name of the allocated interface, will be null on failure.
      */
     public String setupInterfaceForSoftApMode(
             @NonNull InterfaceCallback interfaceCallback, @NonNull WorkSource requestorWs,
             @SoftApConfiguration.BandType int band, boolean isBridged,
             @NonNull SoftApManager softApManager) {
-        return setupInterfaceForSoftApMode(interfaceCallback, requestorWs, band, isBridged, softApManager, -1);
+        return setupInterfaceForSoftApMode(interfaceCallback, requestorWs, band, isBridged, softApManager, new ArrayList<>(), -1);
     }
 
     public String setupInterfaceForSoftApMode(
             @NonNull InterfaceCallback interfaceCallback, @NonNull WorkSource requestorWs,
             @SoftApConfiguration.BandType int band, boolean isBridged,
-            @NonNull SoftApManager softApManager, int type) {
+            @NonNull SoftApManager softApManager, @NonNull List<OuiKeyedData> vendorData, int type) {
         synchronized (mLock) {
             String bugTitle = "Wi-Fi BugReport (softAp interface failure)";
             String errorMsg = "";
@@ -1417,7 +1420,7 @@ public class WifiNative {
                 return null;
             }
             iface.externalListener = interfaceCallback;
-            iface.name = createApIface(iface, requestorWs, band, isBridged, softApManager, type);
+            iface.name = createApIface(iface, requestorWs, band, isBridged, softApManager, vendorData, type);
             if (TextUtils.isEmpty(iface.name)) {
                 errorMsg = "Failed to create softAp iface in vendor HAL";
                 Log.e(TAG, errorMsg);
@@ -1808,6 +1811,13 @@ public class WifiNative {
                 return copyList;
             }
         }
+        if (mMockWifiModem != null
+                && mMockWifiModem.getIsMethodConfigured(
+                MockWifiServiceUtil.MOCK_NL80211_SERVICE, "getScanResults")) {
+            Log.i(TAG, "getScanResults was called from mock wificond");
+            return convertNativeScanResults(ifaceName, mMockWifiModem.getWifiNl80211Manager()
+                   .getScanResults(ifaceName, WifiNl80211Manager.SCAN_TYPE_SINGLE_SCAN));
+        }
         return convertNativeScanResults(ifaceName, mWifiCondManager.getScanResults(
                 ifaceName, WifiNl80211Manager.SCAN_TYPE_SINGLE_SCAN));
     }
@@ -1859,6 +1869,13 @@ public class WifiNative {
      * Returns an empty ArrayList on failure.
      */
     public ArrayList<ScanDetail> getPnoScanResults(@NonNull String ifaceName) {
+        if (mMockWifiModem != null
+                && mMockWifiModem.getIsMethodConfigured(
+                    MockWifiServiceUtil.MOCK_NL80211_SERVICE, "getPnoScanResults")) {
+            Log.i(TAG, "getPnoScanResults was called from mock wificond");
+            return convertNativeScanResults(ifaceName, mMockWifiModem.getWifiNl80211Manager()
+                   .getScanResults(ifaceName, WifiNl80211Manager.SCAN_TYPE_PNO_SCAN));
+        }
         return convertNativeScanResults(ifaceName, mWifiCondManager.getScanResults(ifaceName,
                 WifiNl80211Manager.SCAN_TYPE_PNO_SCAN));
     }
@@ -1968,6 +1985,23 @@ public class WifiNative {
      * @return true on success.
      */
     public boolean startPnoScan(@NonNull String ifaceName, PnoSettings pnoSettings) {
+        if (mMockWifiModem != null
+                && mMockWifiModem.getIsMethodConfigured(
+                MockWifiServiceUtil.MOCK_NL80211_SERVICE, "startPnoScan")) {
+            Log.i(TAG, "startPnoScan was called from mock wificond");
+            return mMockWifiModem.getWifiNl80211Manager()
+                    .startPnoScan(ifaceName, pnoSettings.toNativePnoSettings(),
+                    Runnable::run,
+                        new WifiNl80211Manager.PnoScanRequestCallback() {
+                            @Override
+                            public void onPnoRequestSucceeded() {
+                            }
+
+                            @Override
+                            public void onPnoRequestFailed() {
+                            }
+                        });
+        }
         return mWifiCondManager.startPnoScan(ifaceName, pnoSettings.toNativePnoSettings(),
                 Runnable::run,
                 new WifiNl80211Manager.PnoScanRequestCallback() {
@@ -3775,9 +3809,9 @@ public class WifiNative {
      */
     @Nullable
     public WifiSignalPollResults signalPoll(@NonNull String ifaceName) {
-        if (mMockWifiModem != null && mMockWifiModem.getWifiNl80211Manager() != null
-                && mMockWifiModem.getMockWifiNl80211Manager() != null
-                && mMockWifiModem.getMockWifiNl80211Manager().isMethodConfigured("signalPoll")) {
+        if (mMockWifiModem != null
+                && mMockWifiModem.getIsMethodConfigured(
+                    MockWifiServiceUtil.MOCK_NL80211_SERVICE, "signalPoll")) {
             Log.i(TAG, "signalPoll was called from mock wificond");
             WifiNl80211Manager.SignalPollResult result =
                     mMockWifiModem.getWifiNl80211Manager().signalPoll(ifaceName);
@@ -4615,6 +4649,15 @@ public class WifiNative {
             if (iface.phyCapabilities == null) {
                 iface.phyCapabilities = mWifiCondManager.getDeviceWiphyCapabilities(ifaceName);
             }
+            if (iface.phyCapabilities != null
+                    && iface.phyCapabilities.isWifiStandardSupported(ScanResult.WIFI_STANDARD_11BE)
+                    != mWifiInjector.getSettingsConfigStore()
+                    .get(WifiSettingsConfigStore.WIFI_WIPHY_11BE_SUPPORTED)) {
+                mWifiInjector.getSettingsConfigStore().put(
+                        WifiSettingsConfigStore.WIFI_WIPHY_11BE_SUPPORTED,
+                        iface.phyCapabilities.isWifiStandardSupported(
+                        ScanResult.WIFI_STANDARD_11BE));
+            }
             return iface.phyCapabilities;
         }
     }
@@ -4704,12 +4747,12 @@ public class WifiNative {
 
         // create 2 Ap interfaces
         mdualApInterfaces[0] = mWifiVendorHal.createApIface(
-              new InterfaceDestoyedListenerInternal(iface.id), requestorWs, band, false, softApManager);
+              new InterfaceDestoyedListenerInternal(iface.id), requestorWs, band, false, softApManager, new ArrayList<>());
         if (TextUtils.isEmpty(mdualApInterfaces[0])) {
             return null;
         }
         mdualApInterfaces[1] = mWifiVendorHal.createApIface(
-              new InterfaceDestoyedListenerInternal(iface.id), requestorWs, band, false, softApManager);
+              new InterfaceDestoyedListenerInternal(iface.id), requestorWs, band, false, softApManager, new ArrayList<>());
         if (TextUtils.isEmpty(mdualApInterfaces[1])) {
             mWifiVendorHal.removeApIface(mdualApInterfaces[0]);
             return null;
@@ -5086,10 +5129,13 @@ public class WifiNative {
     public void setMockWifiService(String serviceName) {
         Log.d(TAG, "set MockWifiModemService to " + serviceName);
         if (TextUtils.isEmpty(serviceName)) {
+            mMockWifiModem.unbindMockModemService();
             mMockWifiModem = null;
+            mWifiInjector.setMockWifiServiceUtil(null);
             return;
         }
         mMockWifiModem = new MockWifiServiceUtil(mContext, serviceName, mWifiMonitor);
+        mWifiInjector.setMockWifiServiceUtil(mMockWifiModem);
         if (mMockWifiModem == null) {
             Log.e(TAG, "MockWifiServiceUtil creation failed.");
             return;

@@ -19,6 +19,7 @@ package android.net.wifi;
 import static android.net.wifi.WifiConfiguration.INVALID_NETWORK_ID;
 
 import android.Manifest;
+import android.annotation.FlaggedApi;
 import android.annotation.IntDef;
 import android.annotation.IntRange;
 import android.annotation.NonNull;
@@ -78,6 +79,7 @@ import java.util.Objects;
  */
 public class WifiInfo implements TransportInfo, Parcelable {
     private static final String TAG = "WifiInfo";
+
     /**
      * This is the map described in the Javadoc comment above. The positions
      * of the elements of the array must correspond to the ordinal values
@@ -720,6 +722,17 @@ public class WifiInfo implements TransportInfo, Parcelable {
         @NonNull
         public Builder setNetworkId(int networkId) {
             mWifiInfo.setNetworkId(networkId);
+            return this;
+        }
+
+        /**
+         * Set the subscription ID.
+         * @see WifiInfo#getSubscriptionId()
+         */
+        @FlaggedApi("com.android.wifi.flags.add_subscription_id")
+        @NonNull
+        public Builder setSubscriptionId(int subId) {
+            mWifiInfo.setSubscriptionId(subId);
             return this;
         }
 

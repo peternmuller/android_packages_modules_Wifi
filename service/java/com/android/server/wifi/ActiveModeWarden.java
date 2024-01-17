@@ -23,6 +23,7 @@ import static android.net.wifi.WifiManager.WIFI_STATE_DISABLING;
 import static android.net.wifi.WifiManager.WIFI_STATE_ENABLED;
 import static android.net.wifi.WifiManager.WIFI_STATE_ENABLING;
 import static android.net.wifi.WifiManager.WIFI_STATE_UNKNOWN;
+
 import static com.android.server.wifi.ActiveModeManager.ROLE_CLIENT_LOCAL_ONLY;
 import static com.android.server.wifi.ActiveModeManager.ROLE_CLIENT_PRIMARY;
 import static com.android.server.wifi.ActiveModeManager.ROLE_CLIENT_SCAN_ONLY;
@@ -140,6 +141,7 @@ public class ActiveModeWarden {
     private final DppManager mDppManager;
     private final UserManager mUserManager;
     private final LastCallerInfoManager mLastCallerInfoManager;
+    private final WifiGlobals mWifiGlobals;
 
     private WifiServiceImpl.SoftApCallbackInternal mSoftApCallback;
     private WifiServiceImpl.SoftApCallbackInternal mLohsCallback;
@@ -383,7 +385,8 @@ public class ActiveModeWarden {
             WifiPermissionsUtil wifiPermissionsUtil,
             WifiMetrics wifiMetrics,
             ExternalScoreUpdateObserverProxy externalScoreUpdateObserverProxy,
-            DppManager dppManager) {
+            DppManager dppManager,
+            WifiGlobals wifiGlobals) {
         mWifiInjector = wifiInjector;
         mLooper = looper;
         mHandler = new Handler(looper);
@@ -403,6 +406,7 @@ public class ActiveModeWarden {
         mGraveyard = new Graveyard();
         mUserManager = mWifiInjector.getUserManager();
         mLastCallerInfoManager = mWifiInjector.getLastCallerInfoManager();
+        mWifiGlobals = wifiGlobals;
 
         wifiNative.registerStatusListener(isReady -> {
             if (!isReady && !mIsShuttingdown) {
@@ -2435,6 +2439,13 @@ public class ActiveModeWarden {
 
             private void handleAdditionalClientModeManagerRequest(
                     @NonNull AdditionalClientModeManagerRequestInfo requestInfo) {
+                if (mWifiState.get() == WIFI_STATE_DISABLING
+                        || mWifiState.get() == WIFI_STATE_DISABLED) {
+                    // Do no allow getting secondary CMM when wifi is being disabled or disabled.
+                    requestInfo.listener.onAnswer(null);
+                    return;
+                }
+
                 ClientModeManager primaryManager = getPrimaryClientModeManagerNullable();
                 // TODO(b/228529090): Remove this special code once root cause is resolved.
                 // Special case for holders with ENTER_CAR_MODE_PRIORITIZED. Only give them the
@@ -2593,6 +2604,15 @@ public class ActiveModeWarden {
                                 // airplane mode toggle message to disable airplane mode.
                                 deferMessage(msg);
                             } else {
+                                if (!hasPrimaryOrScanOnlyModeManager()) {
+                                    // SoftAp was enabled during airplane mode and caused
+                                    // WifiController to be in EnabledState without
+                                    // a primary client mode manager.
+                                    // Defer to the default state to handle the airplane mode toggle
+                                    // which may result in enabling wifi if necessary.
+                                    log("airplane mode toggled - and no primary manager");
+                                    return NOT_HANDLED;
+                                }
                                 // when airplane mode is toggled off, but wifi is on, we can keep it
                                 // on
                                 log("airplane mode toggled - and airplane mode is off. return "
@@ -2767,15 +2787,23 @@ public class ActiveModeWarden {
             additionalFeatureSet |= WifiManager.WIFI_FEATURE_AP_RAND_MAC;
         }
 
-        if (ApConfigUtil.isBridgedModeSupported(mContext)) {
+        if (ApConfigUtil.isBridgedModeSupported(mContext, mWifiNative)) {
             // The bridged mode requires the kernel network modules support.
             // It doesn't relate the vendor HAL, set if overlay enables it.
             additionalFeatureSet |= WifiManager.WIFI_FEATURE_BRIDGED_AP;
         }
-        if (ApConfigUtil.isStaWithBridgedModeSupported(mContext)) {
+        if (ApConfigUtil.isStaWithBridgedModeSupported(mContext, mWifiNative)) {
             // The bridged mode requires the kernel network modules support.
             // It doesn't relate the vendor HAL, set if overlay enables it.
             additionalFeatureSet |= WifiManager.WIFI_FEATURE_STA_BRIDGED_AP;
+        }
+        if (mWifiGlobals.isWepSupported()) {
+            additionalFeatureSet |= WifiManager.WIFI_FEATURE_WEP;
+        }
+
+        if (!mWifiGlobals.isWpaPersonalDeprecated()) {
+            // The WPA didn't be deprecated, set it.
+            additionalFeatureSet |= WifiManager.WIFI_FEATURE_WPA_PERSONAL;
         }
         mSupportedFeatureSet.set(
                 (supportedFeatureSet | concurrencyFeatureSet | additionalFeatureSet)

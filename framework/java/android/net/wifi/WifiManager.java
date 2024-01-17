@@ -61,6 +61,7 @@ import android.net.wifi.hotspot2.OsuProvider;
 import android.net.wifi.hotspot2.PasspointConfiguration;
 import android.net.wifi.hotspot2.ProvisioningCallback;
 import android.net.wifi.p2p.WifiP2pConfig;
+import android.net.wifi.p2p.WifiP2pDiscoveryConfig;
 import android.net.wifi.p2p.WifiP2pManager;
 import android.os.Binder;
 import android.os.Build;
@@ -387,6 +388,39 @@ public class WifiManager {
     public @interface SuggestionUserApprovalStatus {}
 
     /**
+     * Disable PNO scan until device reboot.
+     * @hide
+     */
+    @FlaggedApi("com.android.wifi.flags.runtime_disable_pno_scan")
+    @SystemApi
+    public static final int PNO_SCAN_STATE_DISABLED_UNTIL_REBOOT = 0;
+
+    /**
+     * Disable PNO scan until device reboot or Wi-Fi is toggled.
+     * @hide
+     */
+    @FlaggedApi("com.android.wifi.flags.runtime_disable_pno_scan")
+    @SystemApi
+    public static final int PNO_SCAN_STATE_DISABLED_UNTIL_WIFI_TOGGLE = 1;
+
+    /**
+     * Enable PNO scan.
+     * @hide
+     */
+    @FlaggedApi("com.android.wifi.flags.runtime_disable_pno_scan")
+    @SystemApi
+    public static final int PNO_SCAN_STATE_ENABLED = 2;
+
+    /** @hide */
+    @IntDef(prefix = {"PNO_SCAN_STATE_"},
+            value = {PNO_SCAN_STATE_DISABLED_UNTIL_REBOOT,
+                    PNO_SCAN_STATE_DISABLED_UNTIL_WIFI_TOGGLE,
+                    PNO_SCAN_STATE_ENABLED
+            })
+    @Retention(RetentionPolicy.SOURCE)
+    public @interface PnoScanState {}
+
+    /**
      * If one of the removed suggestions is currently connected, that network will be disconnected
      * after a short delay as opposed to immediately (which will be done by
      * {@link #ACTION_REMOVE_SUGGESTION_DISCONNECT}). The {@link ConnectivityManager} may call the
@@ -498,7 +532,8 @@ public class WifiManager {
             API_P2P_SET_CHANNELS,
             API_WIFI_SCANNER_START_SCAN,
             API_SET_TDLS_ENABLED,
-            API_SET_TDLS_ENABLED_WITH_MAC_ADDRESS
+            API_SET_TDLS_ENABLED_WITH_MAC_ADDRESS,
+            API_P2P_DISCOVER_PEERS_WITH_CONFIG_PARAMS
     })
     public @interface ApiType {}
 
@@ -851,7 +886,7 @@ public class WifiManager {
 
     /**
      * A constant used in {@link WifiManager#getLastCallerInfoForApi(int, Executor, BiConsumer)}
-     * Tracks usage of {@link WifiManager#setPnoScanEnabled(boolean, boolean)}
+     * Tracks usage of {@link WifiManager#setPnoScanState(int)}
      *
      * @hide
      */
@@ -860,10 +895,21 @@ public class WifiManager {
     public static final int API_SET_PNO_SCAN_ENABLED = 36;
 
     /**
+     * A constant used in {@link WifiManager#getLastCallerInfoForApi(int, Executor, BiConsumer)}
+     * Tracks usage of {@link WifiP2pManager#discoverPeersWithConfigParams(
+     * WifiP2pManager.Channel, WifiP2pDiscoveryConfig, WifiP2pManager.ActionListener)}
+     *
+     * @hide
+     */
+    @FlaggedApi("com.android.wifi.flags.vendor_parcelable_parameters")
+    @SystemApi
+    public static final int API_P2P_DISCOVER_PEERS_WITH_CONFIG_PARAMS = 37;
+
+    /**
      * Used internally to keep track of boundary.
      * @hide
      */
-    public static final int API_MAX = 37;
+    public static final int API_MAX = 38;
 
     /**
      * Broadcast intent action indicating that a Passpoint provider icon has been received.
@@ -3915,11 +3961,24 @@ public class WifiManager {
      * @hide
      */
     public static final long WIFI_FEATURE_DUAL_BAND_SIMULTANEOUS = 1L << 57;
+
     /**
      * Support for TID-To-Link Mapping negotiation.
      * @hide
      */
     public static final long WIFI_FEATURE_T2LM_NEGOTIATION = 1L << 58;
+
+    /**
+     * Support for WEP Wi-Fi Network
+     * @hide
+     */
+    public static final long WIFI_FEATURE_WEP = 1L << 59;
+
+    /**
+     * Support for WPA PERSONAL Wi-Fi Network
+     * @hide
+     */
+    public static final long WIFI_FEATURE_WPA_PERSONAL = 1L << 60;
 
     private long getSupportedFeatures() {
         try {
@@ -8266,7 +8325,9 @@ public class WifiManager {
     public void enableVerboseLogging(@VerboseLoggingLevel int verbose) {
         try {
             mService.enableVerboseLogging(verbose);
-            mVerboseLoggingEnabled = verbose == VERBOSE_LOGGING_LEVEL_ENABLED;
+            mVerboseLoggingEnabled =
+                    verbose == VERBOSE_LOGGING_LEVEL_ENABLED_SHOW_KEY
+                            || verbose == VERBOSE_LOGGING_LEVEL_ENABLED;
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }
@@ -8796,6 +8857,26 @@ public class WifiManager {
      */
     public boolean isTidToLinkMappingNegotiationSupported() {
         return isFeatureSupported(WIFI_FEATURE_T2LM_NEGOTIATION);
+    }
+
+
+    /**
+    * @return true if this device supports connections to Wi-Fi WEP networks.
+    */
+    @FlaggedApi("com.android.wifi.flags.wep_usage")
+    public boolean isWepSupported() {
+        return isFeatureSupported(WIFI_FEATURE_WEP);
+    }
+
+    /**
+    * @return true if this device supports connections to Wi-Fi WPA-Personal networks.
+    *
+    * Note that this is the older and less secure WPA-Personal protocol, not WPA2-Personal
+    * or later protocols.
+    */
+    @FlaggedApi("com.android.wifi.flags.wpa_personal_usage")
+    public boolean isWpaPersonalSupported() {
+        return isFeatureSupported(WIFI_FEATURE_WPA_PERSONAL);
     }
 
     /**
@@ -10359,6 +10440,52 @@ public class WifiManager {
     @SystemApi
     @RequiresPermission(
             anyOf = {MANAGE_WIFI_NETWORK_SELECTION, NETWORK_SETTINGS, NETWORK_SETUP_WIZARD})
+    public void setPnoScanState(@PnoScanState int pnoScanState) {
+        try {
+            boolean enabled = false;
+            boolean enablePnoScanAfterWifiToggle = false;
+            switch (pnoScanState) {
+                case PNO_SCAN_STATE_DISABLED_UNTIL_REBOOT:
+                    break;
+                case PNO_SCAN_STATE_DISABLED_UNTIL_WIFI_TOGGLE:
+                    enablePnoScanAfterWifiToggle = true;
+                    break;
+                case PNO_SCAN_STATE_ENABLED:
+                    enabled = true;
+                    break;
+                default:
+                    throw new IllegalArgumentException("Invalid PnoScanState");
+            }
+            mService.setPnoScanEnabled(enabled, enablePnoScanAfterWifiToggle,
+                    mContext.getOpPackageName());
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
+     * Wi-Fi Preferred Network Offload (PNO) scanning offloads scanning to the chip to save power
+     * when Wi-Fi is disconnected and the screen is off. See
+     * {@link https://source.android.com/docs/core/connect/wifi-scan} for more details.
+     * <p>
+     * This API can be used to enable or disable PNO scanning. After boot, PNO scanning is enabled
+     * by default. When PNO scanning is disabled, the Wi-Fi framework will not trigger scans at all
+     * when the screen is off. This can be used to save power on devices with small batteries.
+     *
+     * @param enabled True - enable PNO scanning
+     *                False - disable PNO scanning
+     * @param enablePnoScanAfterWifiToggle True - Wifi being enabled by
+     *                                     {@link #setWifiEnabled(boolean)} will re-enable PNO
+     *                                     scanning.
+     *                                     False - Wifi being enabled by
+     *                                     {@link #setWifiEnabled(boolean)} will not re-enable PNO
+     *                                     scanning.
+     *
+     * @throws SecurityException if the caller does not have permission.
+     * @hide
+     */
+    @RequiresPermission(
+            anyOf = {MANAGE_WIFI_NETWORK_SELECTION, NETWORK_SETTINGS, NETWORK_SETUP_WIZARD})
     public void setPnoScanEnabled(boolean enabled, boolean enablePnoScanAfterWifiToggle) {
         try {
             mService.setPnoScanEnabled(enabled, enablePnoScanAfterWifiToggle,
@@ -11906,6 +12033,74 @@ public class WifiManager {
                     });
                 }
             }, extras);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
+     * This API allows a privileged application to set whether or not this device allows
+     * connections to Wi-Fi WEP networks.
+     *
+     * Note: The WEP connections may not work even if caller invokes this method with {@code true}
+     * because device may NOT support connections to Wi-Fi WEP networks.
+     * See: {@link #isWepSupported()}.
+     *
+     * @param isAllowed whether or not the user allow connections to Wi-Fi WEP networks.
+     * @throws SecurityException if the caller does not have permission.
+     * @hide
+     */
+    @FlaggedApi("com.android.wifi.flags.wep_usage")
+    @SystemApi
+    @RequiresPermission(anyOf = {
+            android.Manifest.permission.NETWORK_SETTINGS,
+            android.Manifest.permission.NETWORK_SETUP_WIZARD
+    })
+    public void setWepAllowed(boolean isAllowed) {
+        try {
+            mService.setWepAllowed(isAllowed);
+        } catch (RemoteException e) {
+            throw e.rethrowFromSystemServer();
+        }
+    }
+
+    /**
+     * Query whether or not this device is configured to allow connections to Wi-Fi WEP networks.
+     * @see #setWepAllowed(boolean)
+     *
+     * Note: The WEP connections may not work even if this method returns {@code true} in the
+     * result callback because device may NOT support connections to Wi-Fi WEP networks.
+     * See: {@link #isWepSupported()}.
+     *
+     * @param executor The executor on which callback will be invoked.
+     * @param resultsCallback An asynchronous callback that will return {@code Boolean} indicating
+     *                        whether wep network support is enabled/disabled.
+     *
+     * @throws SecurityException if the caller does not have permission.
+     * @throws NullPointerException if the caller provided invalid inputs.
+     * @hide
+     */
+    @FlaggedApi("com.android.wifi.flags.wep_usage")
+    @SystemApi
+    @RequiresPermission(anyOf = {
+            android.Manifest.permission.NETWORK_SETTINGS,
+            android.Manifest.permission.NETWORK_SETUP_WIZARD
+    })
+    public void queryWepAllowed(@NonNull @CallbackExecutor Executor executor,
+            @NonNull Consumer<Boolean> resultsCallback) {
+        Objects.requireNonNull(executor, "executor cannot be null");
+        Objects.requireNonNull(resultsCallback, "resultsCallback cannot be null");
+        try {
+            mService.queryWepAllowed(
+                    new IBooleanListener.Stub() {
+                        @Override
+                        public void onResult(boolean value) {
+                            Binder.clearCallingIdentity();
+                            executor.execute(() -> {
+                                resultsCallback.accept(value);
+                            });
+                        }
+                    });
         } catch (RemoteException e) {
             throw e.rethrowFromSystemServer();
         }
