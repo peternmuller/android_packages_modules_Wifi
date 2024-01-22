@@ -723,6 +723,7 @@ public class WifiServiceImpl extends BaseWifiService {
     private void updateLocationMode() {
         mIsLocationModeEnabled = mWifiPermissionsUtil.isLocationModeEnabled();
         mWifiConnectivityManager.setLocationModeEnabled(mIsLocationModeEnabled);
+        mWifiNative.setLocationModeEnabled(mIsLocationModeEnabled);
     }
 
     /**
@@ -5363,6 +5364,8 @@ public class WifiServiceImpl extends BaseWifiService {
                 pw.println();
                 mWifiConfigManager.dump(fd, pw, args);
                 pw.println();
+                pw.println("WifiApConfigStore config: " + mWifiApConfigStore.getApConfiguration());
+                pw.println();
                 mPasspointManager.dump(pw);
                 mWifiInjector.getPasspointNetworkNominateHelper().dump(pw);
                 pw.println();
@@ -8034,6 +8037,20 @@ public class WifiServiceImpl extends BaseWifiService {
         mWifiThreadRunner.post(() -> {
             mSettingsConfigStore.put(WIFI_WEP_ALLOWED, isAllowed);
             mWifiGlobals.setWepAllowed(isAllowed);
+            if (!isAllowed) {
+                for (ClientModeManager clientModeManager
+                        : mActiveModeWarden.getClientModeManagers()) {
+                    if (!(clientModeManager instanceof ConcreteClientModeManager)) {
+                        continue;
+                    }
+                    ConcreteClientModeManager cmm = (ConcreteClientModeManager) clientModeManager;
+                    WifiInfo info = cmm.getConnectionInfo();
+                    if (info != null
+                            && info.getCurrentSecurityType() == WifiInfo.SECURITY_TYPE_WEP) {
+                        clientModeManager.disconnect();
+                    }
+                }
+            }
         });
     }
 
