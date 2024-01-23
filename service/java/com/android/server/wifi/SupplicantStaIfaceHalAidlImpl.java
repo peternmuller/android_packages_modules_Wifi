@@ -36,7 +36,7 @@ import static android.net.wifi.WifiManager.WIFI_FEATURE_WPA3_SUITE_B;
 
 import android.annotation.NonNull;
 import android.content.Context;
-import android.hardware.wifi.V1_6.WifiChannelWidthInMhz;
+import android.hardware.wifi.WifiChannelWidthInMhz;
 import android.hardware.wifi.supplicant.BtCoexistenceMode;
 import android.hardware.wifi.supplicant.ConnectionCapabilities;
 import android.hardware.wifi.supplicant.DebugLevel;
@@ -95,6 +95,8 @@ import android.util.Pair;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.modules.utils.build.SdkLevel;
+import com.android.server.wifi.mockwifi.MockWifiServiceUtil;
+import com.android.server.wifi.util.HalAidlUtil;
 import com.android.server.wifi.util.NativeUtil;
 
 import java.nio.ByteBuffer;
@@ -118,6 +120,7 @@ import java.util.regex.Pattern;
  */
 public class SupplicantStaIfaceHalAidlImpl implements ISupplicantStaIfaceHal {
     private static final String TAG = "SupplicantStaIfaceHalAidlImpl";
+    private static final String ISUPPLICANTSTAIFACE = "ISupplicantStaIface";
     @VisibleForTesting
     private static final String HAL_INSTANCE_NAME = ISupplicant.DESCRIPTOR + "/default";
     @VisibleForTesting
@@ -3008,6 +3011,9 @@ public class SupplicantStaIfaceHalAidlImpl implements ISupplicantStaIfaceHal {
                 capOut.maxNumberTxSpatialStreams = cap.maxNumberTxSpatialStreams;
                 capOut.maxNumberRxSpatialStreams = cap.maxNumberRxSpatialStreams;
                 capOut.apTidToLinkMapNegotiationSupported = cap.apTidToLinkMapNegotiationSupported;
+                if (isServiceVersionAtLeast(3) && cap.vendorData != null) {
+                    capOut.vendorData = HalAidlUtil.halToFrameworkOuiKeyedDataList(cap.vendorData);
+                }
                 return capOut;
             } catch (RemoteException e) {
                 handleRemoteException(e, methodStr);
@@ -3029,7 +3035,17 @@ public class SupplicantStaIfaceHalAidlImpl implements ISupplicantStaIfaceHal {
         if (!isServiceVersionAtLeast(2)) return null;
         synchronized (mLock) {
             final String methodStr = "getSignalPollResult";
-            ISupplicantStaIface iface = checkStaIfaceAndLogFailure(ifaceName, methodStr);
+            ISupplicantStaIface iface;
+            if (mWifiInjector.getMockWifiServiceUtil() != null
+                    && mWifiInjector.getMockWifiServiceUtil().isMethodConfigured(
+                        MockWifiServiceUtil.MOCK_SUPPLICANT_SERVICE, ISUPPLICANTSTAIFACE
+                            + MockWifiServiceUtil.AIDL_METHOD_IDENTIFIER
+                                + "getSignalPollResults")) {
+                iface = mWifiInjector.getMockWifiServiceUtil().getMockSupplicantManager()
+                        .getMockSupplicantStaIface(ifaceName);
+            } else {
+                iface = checkStaIfaceAndLogFailure(ifaceName, methodStr);
+            }
             if (iface == null) {
                 return null;
             }

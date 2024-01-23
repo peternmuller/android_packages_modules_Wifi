@@ -45,6 +45,8 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.util.SparseArray;
 
+import androidx.annotation.RequiresApi;
+
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.net.module.util.MacAddressUtils;
@@ -63,6 +65,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -3296,6 +3299,9 @@ public class WifiConfiguration implements Parcelable {
      */
     public HashMap<String, Integer>  linkedConfigurations;
 
+    /** List of {@link OuiKeyedData} providing vendor-specific configuration data. */
+    private @NonNull List<OuiKeyedData> mVendorData;
+
     public WifiConfiguration() {
         networkId = INVALID_NETWORK_ID;
         SSID = null;
@@ -3348,6 +3354,7 @@ public class WifiConfiguration implements Parcelable {
         mEncryptedPreSharedKey = new byte[0];
         mEncryptedPreSharedKeyIv = new byte[0];
         mIpProvisioningTimedOut = false;
+        mVendorData = Collections.emptyList();
     }
 
     /**
@@ -3671,6 +3678,12 @@ public class WifiConfiguration implements Parcelable {
             sbuf.append("]");
         } else {
             sbuf.append("bssidAllowlist unset");
+        }
+        sbuf.append("\n");
+        if (mVendorData != null && !mVendorData.isEmpty()) {
+            sbuf.append("vendorData: ").append(mVendorData);
+        } else {
+            sbuf.append("vendorData unset");
         }
         sbuf.append("\n");
         sbuf.append("IsDppConfigurator: ").append(this.mIsDppConfigurator).append("\n");
@@ -4121,6 +4134,7 @@ public class WifiConfiguration implements Parcelable {
             mEncryptedPreSharedKeyIv = source.mEncryptedPreSharedKeyIv != null
                     ? source.mEncryptedPreSharedKeyIv.clone() : new byte[0];
             mIpProvisioningTimedOut = source.mIpProvisioningTimedOut;
+            mVendorData = new ArrayList<>(source.mVendorData);
         }
     }
 
@@ -4218,6 +4232,7 @@ public class WifiConfiguration implements Parcelable {
         dest.writeByteArray(mEncryptedPreSharedKey);
         dest.writeByteArray(mEncryptedPreSharedKeyIv);
         dest.writeBoolean(mIpProvisioningTimedOut);
+        dest.writeList(mVendorData);
     }
 
     /** Implement the Parcelable interface {@hide} */
@@ -4336,6 +4351,7 @@ public class WifiConfiguration implements Parcelable {
                     config.mEncryptedPreSharedKeyIv = new byte[0];
                 }
                 config.mIpProvisioningTimedOut = in.readBoolean();
+                config.mVendorData = ParcelUtil.readOuiKeyedDataList(in);
                 return config;
             }
 
@@ -4645,5 +4661,44 @@ public class WifiConfiguration implements Parcelable {
      */
     public @Nullable ParcelUuid getSubscriptionGroup() {
         return this.mSubscriptionGroup;
+    }
+
+    /**
+     * Return the vendor-provided configuration data, if it exists. See also {@link
+     * #setVendorData(List)}
+     *
+     * @return Vendor configuration data, or empty list if it does not exist.
+     * @hide
+     */
+    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @FlaggedApi(Flags.FLAG_VENDOR_PARCELABLE_PARAMETERS)
+    @NonNull
+    @SystemApi
+    public List<OuiKeyedData> getVendorData() {
+        if (!SdkLevel.isAtLeastV()) {
+            throw new UnsupportedOperationException();
+        }
+        return mVendorData;
+    }
+
+    /**
+     * Set additional vendor-provided configuration data.
+     *
+     * Setting this field requires the MANAGE_WIFI_NETWORK_SELECTION permission. Otherwise,
+     * if this data is set, the configuration will be rejected upon add or update.
+     *
+     * @param vendorData List of {@link OuiKeyedData} containing the vendor-provided
+     *     configuration data. Note that multiple elements with the same OUI are allowed.
+     * @hide
+     */
+    @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
+    @FlaggedApi(Flags.FLAG_VENDOR_PARCELABLE_PARAMETERS)
+    @SystemApi
+    public void setVendorData(@NonNull List<OuiKeyedData> vendorData) {
+        if (!SdkLevel.isAtLeastV()) {
+            throw new UnsupportedOperationException();
+        }
+        Objects.requireNonNull(vendorData);
+        mVendorData = vendorData;
     }
 }

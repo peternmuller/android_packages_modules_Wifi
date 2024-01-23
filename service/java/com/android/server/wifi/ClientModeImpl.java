@@ -2749,8 +2749,9 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         }
 
         for (MloLink link : mWifiInfo.getAffiliatedMloLinks()) {
-            if (link.getState() == MloLink.MLO_LINK_STATE_IDLE
-                    || link.getState() == MloLink.MLO_LINK_STATE_ACTIVE) {
+            if (pollResults.isAvailable(link.getLinkId())
+                    && (link.getState() == MloLink.MLO_LINK_STATE_IDLE
+                    || link.getState() == MloLink.MLO_LINK_STATE_ACTIVE)) {
                 updateMloLinkFromPollResults(link, pollResults);
             } else {
                 updateMloLinkFromScanResult(link);
@@ -3415,6 +3416,9 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         if (mLastConnectionCapabilities.wifiStandard == ScanResult.WIFI_STANDARD_11BE) {
             updateMloLinkAddrAndStates(mWifiNative.getConnectionMloLinksInfo(mInterfaceName));
             updateBlockListAffiliatedBssids();
+        }
+        if (SdkLevel.isAtLeastV() && mLastConnectionCapabilities.vendorData != null) {
+            mWifiInfo.setVendorData(mLastConnectionCapabilities.vendorData);
         }
         if (mVerboseLoggingEnabled) {
             StringBuilder sb = new StringBuilder();
