@@ -1062,8 +1062,17 @@ public class ClientModeImplTest extends WifiBaseTest {
             }
         }).when(mWifiNetworkSelector).selectNetwork(any());
         String caps = "[RSN-OWE_TRANSITION]";
-        ScanResult scanResult = new ScanResult(WifiSsid.fromUtf8Text(ssid),
-                ssid, TEST_BSSID_STR, 1245, 0, caps, -78, 2412, 1025, 22, 33, 20, 0, 0, true);
+        ScanResult scanResult = new ScanResult.Builder(WifiSsid.fromUtf8Text(ssid),
+                TEST_BSSID_STR)
+                .setHessid(1245)
+                .setCaps(caps)
+                .setRssi(-78)
+                .setFrequency(2450)
+                .setTsf(1025)
+                .setDistanceCm(22)
+                .setDistanceSdCm(33)
+                .setIs80211McRTTResponder(true)
+                .build();
         ScanResult.InformationElement ie = createIE(ScanResult.InformationElement.EID_SSID,
                 ssid.getBytes(StandardCharsets.UTF_8));
         scanResult.informationElements = new ScanResult.InformationElement[]{ie};
@@ -1185,8 +1194,16 @@ public class ClientModeImplTest extends WifiBaseTest {
                 getGoogleGuestScanDetail(TEST_RSSI, TEST_BSSID_STR, sFreq));
         when(mScanDetailCache.getScanResult(TEST_BSSID_STR)).thenReturn(
                 getGoogleGuestScanDetail(TEST_RSSI, TEST_BSSID_STR, sFreq).getScanResult());
-        ScanResult scanResult = new ScanResult(WifiSsid.fromUtf8Text(sFilsSsid),
-                sFilsSsid, TEST_BSSID_STR, 1245, 0, "", -78, 2412, 1025, 22, 33, 20, 0, 0, true);
+        ScanResult scanResult = new ScanResult.Builder(WifiSsid.fromUtf8Text(sFilsSsid),
+                TEST_BSSID_STR)
+                .setHessid(1245)
+                .setRssi(-78)
+                .setFrequency(2450)
+                .setTsf(1025)
+                .setDistanceCm(22)
+                .setDistanceSdCm(33)
+                .setIs80211McRTTResponder(true)
+                .build();
         ScanResult.InformationElement ie = createIE(ScanResult.InformationElement.EID_SSID,
                 sFilsSsid.getBytes(StandardCharsets.UTF_8));
         scanResult.informationElements = new ScanResult.InformationElement[]{ie};
@@ -1324,8 +1341,16 @@ public class ClientModeImplTest extends WifiBaseTest {
                 getGoogleGuestScanDetail(TEST_RSSI, TEST_BSSID_STR, sFreq));
         when(mScanDetailCache.getScanResult(TEST_BSSID_STR)).thenReturn(
                 getGoogleGuestScanDetail(TEST_RSSI, TEST_BSSID_STR, sFreq).getScanResult());
-        ScanResult scanResult = new ScanResult(WifiSsid.fromUtf8Text(sFilsSsid),
-                sFilsSsid, TEST_BSSID_STR, 1245, 0, "", -78, 2412, 1025, 22, 33, 20, 0, 0, true);
+        ScanResult scanResult = new ScanResult.Builder(WifiSsid.fromUtf8Text(sFilsSsid),
+                TEST_BSSID_STR)
+                .setHessid(1245)
+                .setRssi(-78)
+                .setFrequency(2450)
+                .setTsf(1025)
+                .setDistanceCm(22)
+                .setDistanceSdCm(33)
+                .setIs80211McRTTResponder(true)
+                .build();
         ScanResult.InformationElement ie = createIE(ScanResult.InformationElement.EID_SSID,
                 sFilsSsid.getBytes(StandardCharsets.UTF_8));
         scanResult.informationElements = new ScanResult.InformationElement[]{ie};
@@ -6839,8 +6864,17 @@ public class ClientModeImplTest extends WifiBaseTest {
     private void setupFilsEnabledApInScanResult() {
         String caps = "[WPA2-EAP/SHA1+EAP/SHA256+EAP-FILS-SHA256-CCMP]"
                 + "[RSN-EAP/SHA1+EAP/SHA256+EAP-FILS-SHA256-CCMP][ESS]";
-        ScanResult scanResult = new ScanResult(WifiSsid.fromUtf8Text(sFilsSsid),
-                sFilsSsid, TEST_BSSID_STR, 1245, 0, caps, -78, 2412, 1025, 22, 33, 20, 0, 0, true);
+        ScanResult scanResult = new ScanResult.Builder(WifiSsid.fromUtf8Text(sFilsSsid),
+                TEST_BSSID_STR)
+                .setHessid(1245)
+                .setCaps(caps)
+                .setRssi(-78)
+                .setFrequency(2450)
+                .setTsf(1025)
+                .setDistanceCm(22)
+                .setDistanceSdCm(33)
+                .setIs80211McRTTResponder(true)
+                .build();
         ScanResult.InformationElement ie = createIE(ScanResult.InformationElement.EID_SSID,
                 sFilsSsid.getBytes(StandardCharsets.UTF_8));
         scanResult.informationElements = new ScanResult.InformationElement[]{ie};
@@ -7462,10 +7496,7 @@ public class ClientModeImplTest extends WifiBaseTest {
     }
 
     @Test
-    public void testIpReachabilityFailureStaticIpOrganicTriggersDisconnection() throws Exception {
-        when(mDeviceConfigFacade.isHandleRssiOrganicKernelFailuresEnabled()).thenReturn(true);
-        assumeTrue(SdkLevel.isAtLeastT());
-
+    public void testIpReachabilityMonitorNotStartOnStaticIpConfiguration() throws Exception {
         final List<InetAddress> dnsServers = new ArrayList<>();
         dnsServers.add(InetAddresses.parseNumericAddress("8.8.8.8"));
         dnsServers.add(InetAddresses.parseNumericAddress("4.4.4.4"));
@@ -7499,19 +7530,9 @@ public class ClientModeImplTest extends WifiBaseTest {
         injectDhcpSuccess(dhcpResults);
         mLooper.dispatchAll();
         expectRegisterNetworkAgent((agentConfig) -> {}, (cap) -> {});
-        reset(mWifiNetworkAgent);
 
-        // normal behavior outside specific CC
-        when(mWifiGlobals.disableNudDisconnectsForWapiInSpecificCc()).thenReturn(true);
-        when(mWifiCountryCode.getCountryCode()).thenReturn("US");
-
-        // Trigger IP reachability failure and ensure we trigger a disconnection due to static IP.
-        ReachabilityLossInfoParcelable lossInfo =
-                new ReachabilityLossInfoParcelable("", ReachabilityLossReason.ORGANIC);
-        mIpClientCallback.onReachabilityFailure(lossInfo);
-        mLooper.dispatchAll();
-        verify(mWifiNative).disconnect(WIFI_IFACE_NAME);
-        verify(mWifiNetworkAgent, never()).unregisterAfterReplacement(anyInt());
+        verify(mIpClient).startProvisioning(mProvisioningConfigurationCaptor.capture());
+        assertFalse(mProvisioningConfigurationCaptor.getValue().usingIpReachabilityMonitor);
     }
 
     private void doIpReachabilityFailureTest(int lossReason, boolean shouldWifiDisconnect)
@@ -8302,8 +8323,17 @@ public class ClientModeImplTest extends WifiBaseTest {
     private void verifyTransitionDisableEvent(String caps, int indication, boolean shouldUpdate)
             throws Exception {
         final int networkId = FRAMEWORK_NETWORK_ID;
-        ScanResult scanResult = new ScanResult(WifiSsid.fromUtf8Text(sFilsSsid),
-                sFilsSsid, TEST_BSSID_STR, 1245, 0, caps, -78, 2412, 1025, 22, 33, 20, 0, 0, true);
+        ScanResult scanResult = new ScanResult.Builder(WifiSsid.fromUtf8Text(sFilsSsid),
+                TEST_BSSID_STR)
+                .setHessid(1245)
+                .setCaps(caps)
+                .setRssi(-78)
+                .setFrequency(2450)
+                .setTsf(1025)
+                .setDistanceCm(22)
+                .setDistanceSdCm(33)
+                .setIs80211McRTTResponder(true)
+                .build();
         ScanResult.InformationElement ie = createIE(ScanResult.InformationElement.EID_SSID,
                 sFilsSsid.getBytes(StandardCharsets.UTF_8));
         scanResult.informationElements = new ScanResult.InformationElement[]{ie};
@@ -10331,13 +10361,22 @@ public class ClientModeImplTest extends WifiBaseTest {
     }
 
     private ScanResult makeScanResult(String ssid, String caps) {
-        ScanResult scanResult = new ScanResult(WifiSsid.fromUtf8Text(ssid.replace("\"", "")),
-                ssid, TEST_BSSID_STR, 1245, 0, caps, -78, 2412, 1025, 22, 33, 20, 0, 0, true);
+        ScanResult scanResult = new ScanResult.Builder(
+                WifiSsid.fromUtf8Text(ssid.replace("\"", "")),
+                TEST_BSSID_STR)
+                .setHessid(1245)
+                .setCaps(caps)
+                .setRssi(-78)
+                .setFrequency(2450)
+                .setTsf(1025)
+                .setDistanceCm(22)
+                .setDistanceSdCm(33)
+                .setIs80211McRTTResponder(true)
+                .build();
         ScanResult.InformationElement ie = createIE(ScanResult.InformationElement.EID_SSID,
                 ssid.getBytes(StandardCharsets.UTF_8));
         scanResult.informationElements = new ScanResult.InformationElement[]{ie};
         return scanResult;
-
     }
 
     private void verifyConnectWithDisabledPskType(
