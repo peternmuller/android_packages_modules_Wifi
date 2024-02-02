@@ -16,6 +16,7 @@
 
 package android.net.wifi;
 
+import android.annotation.FlaggedApi;
 import android.annotation.IntDef;
 import android.annotation.IntRange;
 import android.annotation.NonNull;
@@ -734,6 +735,9 @@ public final class ScanResult implements Parcelable {
     /** {@hide} */
     public static final long FLAG_80211mc_RESPONDER               = 0x0000000000000002;
 
+    /** @hide */
+    public static final long FLAG_80211az_NTB_RESPONDER           = 0x0000000000000004;
+
     /*
      * These flags are specific to the ScanResult class, and are not related to the |flags|
      * field of the per-BSS scan results from WPA supplicant.
@@ -765,6 +769,14 @@ public final class ScanResult implements Parcelable {
 
     public boolean is80211mcResponder() {
         return (flags & FLAG_80211mc_RESPONDER) != 0;
+    }
+
+    /**
+     * @return whether AP is a IEEE802.11az Non-Trigger based Ranging Responder.
+     */
+    @FlaggedApi("com.android.wifi.flags.rtt_11az_ntb_ranging_support")
+    public boolean is80211azNtbResponder() {
+        return (flags & FLAG_80211az_NTB_RESPONDER) != 0;
     }
 
     public boolean isPasspointNetwork() {
@@ -1436,6 +1448,7 @@ public final class ScanResult implements Parcelable {
         private int mCenterFreq0 = UNSPECIFIED;
         private int mCenterFreq1 = UNSPECIFIED;
         private boolean mIs80211McRTTResponder = false;
+        private boolean mIs80211azNtbRTTResponder = false;
 
         /** @hide */
         @NonNull
@@ -1529,9 +1542,62 @@ public final class ScanResult implements Parcelable {
         }
 
         /** @hide */
+        @NonNull
+        public Builder setIs80211azNtbRTTResponder(boolean is80211azNtbRTTResponder) {
+            mIs80211azNtbRTTResponder = is80211azNtbRTTResponder;
+            return this;
+        }
+
+        /** @hide */
         public Builder(WifiSsid wifiSsid, String bssid) {
             mWifiSsid = wifiSsid;
             mBssid = bssid;
+        }
+
+        /**
+         * @hide
+         *
+         */
+        public Builder() {
+
+        }
+
+        /**
+         * @hide
+         */
+        public Builder setWifiSsid(WifiSsid wifiSsid) {
+            mWifiSsid = wifiSsid;
+            return this;
+        }
+
+        /**
+         * @hide
+         */
+        public Builder setBssid(String bssid) {
+            mBssid = bssid;
+            return this;
+        }
+
+        /**
+         * @hide
+         */
+        public void clear() {
+            mWifiSsid = null;
+            mBssid = null;
+            mHessid = 0;
+            mAnqpDomainId = 0;
+            mOsuProviders = null;
+            mCaps = null;
+            mRssi = UNSPECIFIED;
+            mFrequency = UNSPECIFIED;
+            mTsf = 0;
+            mDistanceCm = UNSPECIFIED;
+            mDistanceSdCm = UNSPECIFIED;
+            mChannelWidth = ScanResult.CHANNEL_WIDTH_20MHZ;
+            mCenterFreq0 = UNSPECIFIED;
+            mCenterFreq1 = UNSPECIFIED;
+            mIs80211McRTTResponder = false;
+            mIs80211azNtbRTTResponder = false;
         }
 
         /** @hide */
@@ -1572,6 +1638,7 @@ public final class ScanResult implements Parcelable {
         this.centerFreq1 = builder.mCenterFreq1;
         this.flags = 0;
         this.flags |= (builder.mIs80211McRTTResponder) ? FLAG_80211mc_RESPONDER : 0;
+        this.flags |= (builder.mIs80211azNtbRTTResponder) ? FLAG_80211az_NTB_RESPONDER : 0;
         this.radioChainInfos = null;
         this.mApMldMacAddress = null;
     }
@@ -1754,6 +1821,9 @@ public final class ScanResult implements Parcelable {
         sb.append(", standard: ").append(wifiStandardToString(mWifiStandard));
         sb.append(", 80211mcResponder: ");
         sb.append(((flags & FLAG_80211mc_RESPONDER) != 0) ? "is supported" : "is not supported");
+        sb.append(", 80211azNtbResponder: ");
+        sb.append(
+                ((flags & FLAG_80211az_NTB_RESPONDER) != 0) ? "is supported" : "is not supported");
         sb.append(", Radio Chain Infos: ").append(Arrays.toString(radioChainInfos));
         sb.append(", interface name: ").append(ifaceName);
 

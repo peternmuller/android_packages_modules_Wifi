@@ -118,6 +118,7 @@ package android.net.wifi {
     method public int getIpVersion();
     method @IntRange(from=1, to=255) public int getPolicyId();
     method public int getProtocol();
+    method @FlaggedApi("com.android.wifi.flags.qos_r3_support") @Nullable public android.net.wifi.QosCharacteristics getQosCharacteristics();
     method @Nullable public java.net.InetAddress getSourceAddress();
     method @IntRange(from=android.net.DscpPolicy.SOURCE_PORT_ANY, to=65535) public int getSourcePort();
     method public int getUserPriority();
@@ -155,6 +156,7 @@ package android.net.wifi {
     method @NonNull public android.net.wifi.QosPolicyParams.Builder setFlowLabel(@Nullable byte[]);
     method @NonNull public android.net.wifi.QosPolicyParams.Builder setIpVersion(int);
     method @NonNull public android.net.wifi.QosPolicyParams.Builder setProtocol(int);
+    method @FlaggedApi("com.android.wifi.flags.qos_r3_support") @NonNull public android.net.wifi.QosPolicyParams.Builder setQosCharacteristics(@Nullable android.net.wifi.QosCharacteristics);
     method @NonNull public android.net.wifi.QosPolicyParams.Builder setSourceAddress(@Nullable java.net.InetAddress);
     method @NonNull public android.net.wifi.QosPolicyParams.Builder setSourcePort(@IntRange(from=android.net.DscpPolicy.SOURCE_PORT_ANY, to=65535) int);
     method @NonNull public android.net.wifi.QosPolicyParams.Builder setUserPriority(int);
@@ -527,6 +529,7 @@ package android.net.wifi {
     method @Deprecated public int getAuthType();
     method @Deprecated @Nullable public java.util.List<android.net.MacAddress> getBssidAllowlist();
     method @Deprecated public int getDeletionPriority();
+    method @Deprecated @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") public int getDhcpHostnameSetting();
     method @Deprecated @NonNull public byte[] getDppCSignKey();
     method @Deprecated @NonNull public byte[] getDppConnector();
     method @Deprecated @NonNull public byte[] getDppNetAccessKey();
@@ -544,10 +547,14 @@ package android.net.wifi {
     method @Deprecated public boolean isRepeaterEnabled();
     method @Deprecated public void setBssidAllowlist(@Nullable java.util.List<android.net.MacAddress>);
     method @Deprecated public void setDeletionPriority(int) throws java.lang.IllegalArgumentException;
+    method @Deprecated @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") @RequiresPermission(anyOf={android.Manifest.permission.NETWORK_SETTINGS, android.Manifest.permission.NETWORK_SETUP_WIZARD}) public void setDhcpHostnameSetting(int);
     method @Deprecated public void setNetworkSelectionStatus(@NonNull android.net.wifi.WifiConfiguration.NetworkSelectionStatus);
     method @Deprecated @RequiresPermission(android.Manifest.permission.NETWORK_SETTINGS) public void setRepeaterEnabled(boolean);
     method @Deprecated @FlaggedApi("com.android.wifi.flags.vendor_parcelable_parameters") public void setVendorData(@NonNull java.util.List<android.net.wifi.OuiKeyedData>);
     field @Deprecated @NonNull public static final android.os.Parcelable.Creator<android.net.wifi.WifiConfiguration> CREATOR;
+    field @Deprecated @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") public static final int DHCP_HOSTNAME_SETTING_AUTO = 0; // 0x0
+    field @Deprecated @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") public static final int DHCP_HOSTNAME_SETTING_DO_NOT_SEND = 2; // 0x2
+    field @Deprecated @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") public static final int DHCP_HOSTNAME_SETTING_SEND = 1; // 0x1
     field @Deprecated public static final int INVALID_NETWORK_ID = -1; // 0xffffffff
     field @Deprecated public static final int METERED_OVERRIDE_METERED = 1; // 0x1
     field @Deprecated public static final int METERED_OVERRIDE_NONE = 0; // 0x0
@@ -1541,11 +1548,13 @@ package android.net.wifi.hotspot2 {
 package android.net.wifi.p2p {
 
   public class WifiP2pConfig implements android.os.Parcelable {
+    method @FlaggedApi("com.android.wifi.flags.vendor_parcelable_parameters") @NonNull public java.util.List<android.net.wifi.OuiKeyedData> getVendorData();
     method public boolean isJoinExistingGroup();
   }
 
   public static final class WifiP2pConfig.Builder {
     method @NonNull public android.net.wifi.p2p.WifiP2pConfig.Builder setJoinExistingGroup(boolean);
+    method @FlaggedApi("com.android.wifi.flags.vendor_parcelable_parameters") @NonNull public android.net.wifi.p2p.WifiP2pConfig.Builder setVendorData(@NonNull java.util.List<android.net.wifi.OuiKeyedData>);
   }
 
   @FlaggedApi("com.android.wifi.flags.vendor_parcelable_parameters") public final class WifiP2pDiscoveryConfig implements android.os.Parcelable {
@@ -1554,6 +1563,11 @@ package android.net.wifi.p2p {
 
   @FlaggedApi("com.android.wifi.flags.vendor_parcelable_parameters") public static final class WifiP2pDiscoveryConfig.Builder {
     method @FlaggedApi("com.android.wifi.flags.vendor_parcelable_parameters") @NonNull public android.net.wifi.p2p.WifiP2pDiscoveryConfig.Builder setVendorData(@NonNull java.util.List<android.net.wifi.OuiKeyedData>);
+  }
+
+  public class WifiP2pGroup implements android.os.Parcelable {
+    method @FlaggedApi("com.android.wifi.flags.vendor_parcelable_parameters") @NonNull public java.util.List<android.net.wifi.OuiKeyedData> getVendorData();
+    method @FlaggedApi("com.android.wifi.flags.vendor_parcelable_parameters") public void setVendorData(@NonNull java.util.List<android.net.wifi.OuiKeyedData>);
   }
 
   public final class WifiP2pGroupList implements android.os.Parcelable {
@@ -1586,6 +1600,19 @@ package android.net.wifi.rtt {
 
   public final class RangingRequest implements android.os.Parcelable {
     method @NonNull public java.util.List<android.net.wifi.rtt.ResponderConfig> getRttResponders();
+    method @FlaggedApi("com.android.wifi.flags.vendor_parcelable_parameters") @NonNull public java.util.List<android.net.wifi.OuiKeyedData> getVendorData();
+  }
+
+  public static final class RangingRequest.Builder {
+    method @FlaggedApi("com.android.wifi.flags.vendor_parcelable_parameters") @NonNull public android.net.wifi.rtt.RangingRequest.Builder setVendorData(@NonNull java.util.List<android.net.wifi.OuiKeyedData>);
+  }
+
+  public final class RangingResult implements android.os.Parcelable {
+    method @FlaggedApi("com.android.wifi.flags.vendor_parcelable_parameters") @NonNull public java.util.List<android.net.wifi.OuiKeyedData> getVendorData();
+  }
+
+  @FlaggedApi("com.android.wifi.flags.ranging_result_builder") public static final class RangingResult.Builder {
+    method @FlaggedApi("com.android.wifi.flags.vendor_parcelable_parameters") @NonNull public android.net.wifi.rtt.RangingResult.Builder setVendorData(@NonNull java.util.List<android.net.wifi.OuiKeyedData>);
   }
 
   public final class ResponderConfig implements android.os.Parcelable {
@@ -1615,6 +1642,7 @@ package android.net.wifi.rtt {
     field @Nullable public final android.net.wifi.aware.PeerHandle peerHandle;
     field public final int preamble;
     field public final int responderType;
+    field @FlaggedApi("com.android.wifi.flags.rtt_11az_ntb_ranging_support") public final boolean supports80211azNtb;
     field public final boolean supports80211mc;
   }
 
