@@ -17,6 +17,7 @@
 package com.android.server.wifi.p2p;
 
 import android.annotation.NonNull;
+import android.annotation.Nullable;
 import android.hardware.wifi.supplicant.DebugLevel;
 import android.hardware.wifi.supplicant.FreqRange;
 import android.hardware.wifi.supplicant.ISupplicant;
@@ -39,6 +40,7 @@ import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pDevice;
 import android.net.wifi.p2p.WifiP2pDiscoveryConfig;
+import android.net.wifi.p2p.WifiP2pExtListenParams;
 import android.net.wifi.p2p.WifiP2pGroup;
 import android.net.wifi.p2p.WifiP2pGroupList;
 import android.net.wifi.p2p.WifiP2pManager;
@@ -54,6 +56,7 @@ import android.util.Log;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.server.wifi.WifiInjector;
+import com.android.server.wifi.WifiNative;
 import com.android.server.wifi.WifiSettingsConfigStore;
 import com.android.server.wifi.util.ArrayUtils;
 import com.android.server.wifi.util.HalAidlUtil;
@@ -66,6 +69,8 @@ import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -81,6 +86,7 @@ public class SupplicantP2pIfaceHalAidlImpl implements ISupplicantP2pIfaceHal {
     private boolean mInitializationStarted = false;
     private static final int RESULT_NOT_VALID = -1;
     private static final int DEFAULT_OPERATING_CLASS = 81;
+    public static final long WAIT_FOR_DEATH_TIMEOUT_MS = 50L;
     /**
      * Regex pattern for extracting the wps device type bytes.
      * Matches a strings like the following: "<categ>-<OUI>-<subcateg>";
@@ -89,14 +95,19 @@ public class SupplicantP2pIfaceHalAidlImpl implements ISupplicantP2pIfaceHal {
             Pattern.compile("^(\\d{1,2})-([0-9a-fA-F]{8})-(\\d{1,2})$");
 
     private final Object mLock = new Object();
+    private CountDownLatch mWaitForDeathLatch;
+    private WifiNative.SupplicantDeathEventHandler mDeathEventHandler;
 
     // Supplicant HAL AIDL interface objects
     private ISupplicant mISupplicant = null;
     private ISupplicantP2pIface mISupplicantP2pIface = null;
     private final DeathRecipient mSupplicantDeathRecipient =
             () -> {
-                Log.w(TAG, "ISupplicant/ISupplicantP2pIface died");
+                Log.d(TAG, "ISupplicant/ISupplicantP2pIface died");
                 synchronized (mLock) {
+                    if (mWaitForDeathLatch != null) {
+                        mWaitForDeathLatch.countDown();
+                    }
                     supplicantServiceDiedHandler();
                 }
             };
@@ -277,6 +288,9 @@ public class SupplicantP2pIfaceHalAidlImpl implements ISupplicantP2pIfaceHal {
             mISupplicant = null;
             mISupplicantP2pIface = null;
             mInitializationStarted = false;
+            if (mDeathEventHandler != null) {
+                mDeathEventHandler.onDeath();
+            }
         }
     }
 
@@ -1313,21 +1327,13 @@ public class SupplicantP2pIfaceHalAidlImpl implements ISupplicantP2pIfaceHal {
     }
 
     /**
-     * Configure Extended Listen Timing.
-     *
-     * If enabled, listen state must be entered every |intervalInMillis| for at
-     * least |periodInMillis|. Both values have acceptable range of 1-65535
-     * (with interval obviously having to be larger than or equal to duration).
-     * If the P2P module is not idle at the time the Extended Listen Timing
-     * timeout occurs, the Listen State operation must be skipped.
-     *
-     * @param enable Enables or disables listening.
-     * @param periodInMillis Period in milliseconds.
-     * @param intervalInMillis Interval in milliseconds.
+     * Configure Extended Listen Timing. See comments for
+     * {@link ISupplicantP2pIfaceHal#configureExtListen(boolean, int, int, WifiP2pExtListenParams)}
      *
      * @return true, if operation was successful.
      */
-    public boolean configureExtListen(boolean enable, int periodInMillis, int intervalInMillis) {
+    public boolean configureExtListen(boolean enable, int periodInMillis, int intervalInMillis,
+            @Nullable WifiP2pExtListenParams extListenParams) {
         synchronized (mLock) {
             String methodStr = "configureExtListen";
             if (!checkP2pIfaceAndLogFailure(methodStr)) {
@@ -1351,15 +1357,13 @@ public class SupplicantP2pIfaceHalAidlImpl implements ISupplicantP2pIfaceHal {
                 return false;
             }
 
+            if (getCachedServiceVersion() >= 3) {
+                return configureExtListenWithParams(
+                        periodInMillis, intervalInMillis, extListenParams);
+            }
+
             try {
-                if (getCachedServiceVersion() >= 3) {
-                    P2pExtListenInfo extListenInfo = new P2pExtListenInfo();
-                    extListenInfo.periodMs = periodInMillis;
-                    extListenInfo.intervalMs = intervalInMillis;
-                    mISupplicantP2pIface.configureExtListenWithParams(extListenInfo);
-                } else {
-                    mISupplicantP2pIface.configureExtListen(periodInMillis, intervalInMillis);
-                }
+                mISupplicantP2pIface.configureExtListen(periodInMillis, intervalInMillis);
                 return true;
             } catch (RemoteException e) {
                 handleRemoteException(e, methodStr);
@@ -1368,6 +1372,32 @@ public class SupplicantP2pIfaceHalAidlImpl implements ISupplicantP2pIfaceHal {
             }
             return false;
         }
+    }
+
+    private boolean configureExtListenWithParams(int periodInMillis, int intervalInMillis,
+            @Nullable WifiP2pExtListenParams extListenParams) {
+        String methodStr = "configureExtListenWithParams";
+
+        // Expect that these parameters are already validated.
+        P2pExtListenInfo extListenInfo = new P2pExtListenInfo();
+        extListenInfo.periodMs = periodInMillis;
+        extListenInfo.intervalMs = intervalInMillis;
+
+        if (SdkLevel.isAtLeastV() && extListenParams != null
+                && extListenParams.getVendorData() != null) {
+            extListenInfo.vendorData =
+                    HalAidlUtil.frameworkToHalOuiKeyedDataList(extListenParams.getVendorData());
+        }
+
+        try {
+            mISupplicantP2pIface.configureExtListenWithParams(extListenInfo);
+            return true;
+        } catch (RemoteException e) {
+            handleRemoteException(e, methodStr);
+        } catch (ServiceSpecificException e) {
+            handleServiceSpecificException(e, methodStr);
+        }
+        return false;
     }
 
     /**
@@ -2670,4 +2700,64 @@ public class SupplicantP2pIfaceHalAidlImpl implements ISupplicantP2pIfaceHal {
                         "Invalid WPS config method: " + configMethod);
         }
     }
+
+    /**
+     * Terminate the supplicant daemon & wait for its death.
+     */
+    public void terminate() {
+        synchronized (mLock) {
+            final String methodStr = "terminate";
+            if (!checkSupplicantAndLogFailure(methodStr)) {
+                return;
+            }
+            Log.i(TAG, "Terminate supplicant service");
+            try {
+                mWaitForDeathLatch = new CountDownLatch(1);
+                mISupplicant.terminate();
+            } catch (RemoteException e) {
+                handleRemoteException(e, methodStr);
+            }
+        }
+
+        // Wait for death recipient to confirm the service death.
+        try {
+            if (!mWaitForDeathLatch.await(WAIT_FOR_DEATH_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+                Log.w(TAG, "Timed out waiting for confirmation of supplicant death");
+                supplicantServiceDiedHandler();
+            } else {
+                Log.d(TAG, "Got service death confirmation");
+            }
+        } catch (InterruptedException e) {
+            Log.w(TAG, "Failed to wait for supplicant death");
+        }
+    }
+
+    /**
+     * Registers a death notification for supplicant.
+     * @return Returns true on success.
+     */
+    public boolean registerDeathHandler(@NonNull WifiNative.SupplicantDeathEventHandler handler) {
+        synchronized (mLock) {
+            if (mDeathEventHandler != null) {
+                Log.e(TAG, "Death handler already present");
+            }
+            mDeathEventHandler = handler;
+            return true;
+        }
+    }
+
+    /**
+     * Deregisters a death notification for supplicant.
+     * @return Returns true on success.
+     */
+    public boolean deregisterDeathHandler() {
+        synchronized (mLock) {
+            if (mDeathEventHandler == null) {
+                Log.e(TAG, "No Death handler present");
+            }
+            mDeathEventHandler = null;
+            return true;
+        }
+    }
+
 }

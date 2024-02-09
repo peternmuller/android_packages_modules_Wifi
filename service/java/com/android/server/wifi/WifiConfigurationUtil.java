@@ -278,14 +278,12 @@ public class WifiConfigurationUtil {
      * @return true if DHCP hostname setting changed or the existing configuration is
      * null and the newConfig is setting the DHCP hostname setting to the default value.
      */
-    public static boolean hasDhcpHostnameSettingChanged(WifiConfiguration existingConfig,
+    public static boolean hasSendDhcpHostnameEnabledChanged(WifiConfiguration existingConfig,
             WifiConfiguration newConfig) {
         if (existingConfig == null) {
-            return newConfig.getDhcpHostnameSetting()
-                    != WifiConfiguration.DHCP_HOSTNAME_SETTING_AUTO;
+            return !newConfig.isSendDhcpHostnameEnabled();
         }
-        return newConfig.getDhcpHostnameSetting()
-                != existingConfig.getDhcpHostnameSetting();
+        return newConfig.isSendDhcpHostnameEnabled() != existingConfig.isSendDhcpHostnameEnabled();
     }
 
     /**
@@ -973,6 +971,9 @@ public class WifiConfigurationUtil {
             return false;
         }
         if (WifiConfigurationUtil.hasCredentialChanged(config, config1)) {
+            return false;
+        }
+        if (config.isWifi7Enabled() != config1.isWifi7Enabled()) {
             return false;
         }
         return true;

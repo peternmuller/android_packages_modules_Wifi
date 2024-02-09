@@ -819,6 +819,20 @@ public class WifiConfigManager {
     }
 
     /**
+     * Check Wi-Fi 7 is enabled for this network.
+     *
+     * @param networkId networkId of the requested network.
+     * @return true if Wi-Fi 7 is enabled for this network, false otherwise.
+     */
+    public boolean isWifi7Enabled(int networkId) {
+        WifiConfiguration config = getInternalConfiguredNetwork(networkId);
+        if (config == null) {
+            return false;
+        }
+        return config.isWifi7Enabled();
+    }
+
+    /**
      * Retrieves the configured network corresponding to the provided networkId with password
      * masked.
      *
@@ -1281,8 +1295,8 @@ public class WifiConfigManager {
                 externalConfig.getNetworkSelectionStatus().getConnectChoiceRssi());
         internalConfig.setBssidAllowlist(externalConfig.getBssidAllowlistInternal());
         internalConfig.setRepeaterEnabled(externalConfig.isRepeaterEnabled());
-        internalConfig.setDhcpHostnameSetting(
-                externalConfig.getDhcpHostnameSetting());
+        internalConfig.setSendDhcpHostnameEnabled(externalConfig.isSendDhcpHostnameEnabled());
+        internalConfig.setWifi7Enabled(externalConfig.isWifi7Enabled());
     }
 
     /**
@@ -1525,10 +1539,10 @@ public class WifiConfigManager {
                     existingInternalConfig);
         }
 
-        if (WifiConfigurationUtil.hasDhcpHostnameSettingChanged(existingInternalConfig,
+        if (WifiConfigurationUtil.hasSendDhcpHostnameEnabledChanged(existingInternalConfig,
                 newInternalConfig) && !mWifiPermissionsUtil.checkNetworkSettingsPermission(uid)
                 && !mWifiPermissionsUtil.checkNetworkSetupWizardPermission(uid)) {
-            Log.e(TAG, "UID " + uid + " does not have permission to modify DHCP hostname "
+            Log.e(TAG, "UID " + uid + " does not have permission to modify send DHCP hostname "
                     + "setting " + config.getProfileKey() + ". Must have "
                     + "NETWORK_SETTINGS or NETWORK_SETUP_WIZARD.");
             return new Pair<>(
@@ -4443,12 +4457,11 @@ public class WifiConfigManager {
                 Log.d(TAG, "Set altSubjectMatch to " + altSubjectNames);
             }
             newConfig.enterpriseConfig.setAltSubjectMatch(altSubjectNames);
-        } else {
-            if (mVerboseLoggingEnabled) {
-                Log.d(TAG, "Set domainSuffixMatch to " + serverCertInfo.commonName);
-            }
-            newConfig.enterpriseConfig.setDomainSuffixMatch(serverCertInfo.commonName);
         }
+        if (mVerboseLoggingEnabled) {
+            Log.d(TAG, "Set domainSuffixMatch to " + serverCertInfo.commonName);
+        }
+        newConfig.enterpriseConfig.setDomainSuffixMatch(serverCertInfo.commonName);
         newConfig.enterpriseConfig.setUserApproveNoCaCert(false);
         // Trigger an update to install CA certificate and the corresponding configuration.
         NetworkUpdateResult result = addOrUpdateNetwork(newConfig, internalConfig.creatorUid);

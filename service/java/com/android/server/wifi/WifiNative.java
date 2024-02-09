@@ -1633,7 +1633,8 @@ public class WifiNative {
                 return false;
             }
             if (mContext.getResources().getBoolean(
-                    R.bool.config_wifiNetworkCentricQosPolicyFeatureEnabled)) {
+                    R.bool.config_wifiNetworkCentricQosPolicyFeatureEnabled)
+                    && isSupplicantUsingAidlService()) {
                 mQosPolicyFeatureEnabled = mSupplicantStaIfaceHal
                         .setNetworkCentricQosPolicyFeatureEnabled(iface.name, true);
                 if (!mQosPolicyFeatureEnabled) {
@@ -3258,6 +3259,15 @@ public class WifiNative {
      */
     public void registerDppEventCallback(DppEventCallback dppEventCallback) {
         mSupplicantStaIfaceHal.registerDppCallback(dppEventCallback);
+    }
+
+    /**
+     * Check whether Supplicant is using the AIDL HAL service.
+     *
+     * @return true if the Supplicant is using the AIDL service, false otherwise.
+     */
+    public boolean isSupplicantUsingAidlService() {
+        return mSupplicantStaIfaceHal.isAidlService();
     }
 
     /**
