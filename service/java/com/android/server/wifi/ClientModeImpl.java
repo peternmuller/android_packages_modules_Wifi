@@ -1962,7 +1962,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
      */
     public boolean enableTdls(String remoteMacAddress, boolean enable) {
         boolean ret;
-        if (!canEnableTdls()) {
+        if (enable && !canEnableTdls()) {
             return false;
         }
         ret = mWifiNative.startTdls(mInterfaceName, remoteMacAddress, enable);
@@ -2690,6 +2690,40 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         if (mVerboseLoggingEnabled) log("mSuspendOptNeedsDisabled " + mSuspendOptNeedsDisabled);
     }
 
+    private void updateMloLinkFromPollResults(MloLink link, WifiSignalPollResults pollResults) {
+        if (link == null) return;
+        int linkId = link.getLinkId();
+        link.setRssi(pollResults.getRssi(linkId));
+        link.setTxLinkSpeedMbps(pollResults.getTxLinkSpeed(linkId));
+        link.setRxLinkSpeedMbps(pollResults.getRxLinkSpeed(linkId));
+        link.setChannel(ScanResult.convertFrequencyMhzToChannelIfSupported(
+                pollResults.getFrequency(linkId)));
+        link.setBand(ScanResult.toBand(pollResults.getFrequency(linkId)));
+        if (mVerboseLoggingEnabled) {
+            logd("updateMloLinkFromPollResults: linkId=" + linkId + " rssi=" + link.getRssi()
+                    + " channel=" + link.getChannel()
+                    + " band=" + link.getBand()
+                    + " TxLinkspeed=" + link.getTxLinkSpeedMbps()
+                    + " RxLinkSpeed=" + link.getRxLinkSpeedMbps());
+
+        }
+    }
+
+    private void updateMloLinkFromScanResult(MloLink link) {
+        if (link == null || link.getApMacAddress() == null) return;
+        ScanDetailCache scanDetailCache = mWifiConfigManager.getScanDetailCacheForNetwork(
+                mWifiInfo.getNetworkId());
+        if (scanDetailCache == null) return;
+        ScanResult matchingScanResult = scanDetailCache.getScanResult(
+                link.getApMacAddress().toString());
+        if (matchingScanResult == null) return;
+        link.setRssi(matchingScanResult.level);
+        if (mVerboseLoggingEnabled) {
+            logd("updateMloLinkFromScanResult: linkId=" + link.getLinkId() + " rssi="
+                    + link.getRssi());
+        }
+    }
+
     /*
      * Fetch link layer stats, RSSI, linkspeed, and frequency on current connection
      * and update Network capabilities
@@ -2714,21 +2748,13 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
                     + " RxLinkSpeed=" + newRxLinkSpeed);
         }
 
-        /* Set link specific signal poll results for associated links */
-        for (MloLink link : mWifiInfo.getAssociatedMloLinks()) {
-            int linkId = link.getLinkId();
-            link.setRssi(pollResults.getRssi(linkId));
-            link.setTxLinkSpeedMbps(pollResults.getTxLinkSpeed(linkId));
-            link.setRxLinkSpeedMbps(pollResults.getRxLinkSpeed(linkId));
-            link.setChannel(ScanResult.convertFrequencyMhzToChannelIfSupported(
-                    pollResults.getFrequency(linkId)));
-            link.setBand(ScanResult.toBand(pollResults.getFrequency(linkId)));
-            if (mVerboseLoggingEnabled) {
-                logd("linkId=" + linkId + " rssi=" + link.getRssi()
-                        + " channel=" + link.getChannel()
-                        + " band=" + link.getBand()
-                        + " TxLinkspeed=" + link.getTxLinkSpeedMbps()
-                        + " RxLinkSpeed=" + link.getRxLinkSpeedMbps());
+        for (MloLink link : mWifiInfo.getAffiliatedMloLinks()) {
+            if (pollResults.isAvailable(link.getLinkId())
+                    && (link.getState() == MloLink.MLO_LINK_STATE_IDLE
+                    || link.getState() == MloLink.MLO_LINK_STATE_ACTIVE)) {
+                updateMloLinkFromPollResults(link, pollResults);
+            } else {
+                updateMloLinkFromScanResult(link);
             }
         }
 
@@ -3391,6 +3417,9 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
             updateMloLinkAddrAndStates(mWifiNative.getConnectionMloLinksInfo(mInterfaceName));
             updateBlockListAffiliatedBssids();
         }
+        if (SdkLevel.isAtLeastV() && mLastConnectionCapabilities.vendorData != null) {
+            mWifiInfo.setVendorData(mLastConnectionCapabilities.vendorData);
+        }
         if (mVerboseLoggingEnabled) {
             StringBuilder sb = new StringBuilder();
             logd(sb.append("WifiStandard: ").append(ScanResult.wifiStandardToString(
@@ -4024,15 +4053,12 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
             // roaming. The linked network roaming reset the mLastNetworkId which results in
             // the connected configuration to be null.
             config = getConnectingWifiConfigurationInternal();
-        }
-        if (config == null || (config.getIpAssignment() == IpConfiguration.IpAssignment.STATIC)) {
-            // config could be null if it had been removed from WifiConfigManager. In this case
-            // we should simply disconnect. And if IP reachability failures come from static IP
-            // case(e.g. a misconfigured default gateway IP address), refreshing L3 provisioning
-            // doesn't help improve the situation and also introduces a loop, it's better to
-            // disconnect and disable the auto-rejoin on that network.
-            handleIpReachabilityLost(lossReason);
-            return;
+            if (config == null) {
+                // config could be null if it had been removed from WifiConfigManager. In this case
+                // we should simply disconnect.
+                handleIpReachabilityLost(lossReason);
+                return;
+            }
         }
         final long curTime = mClock.getElapsedSinceBootMillis();
         if (curTime - mNudFailureCounter.first <= mWifiGlobals.getRepeatedNudFailuresWindowMs()) {
@@ -6669,6 +6695,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
                     }
                     else {
                         mRssiMonitor.setShortPollRssiInterval();
+                        removeMessages(CMD_RSSI_POLL);
                     }
                     break;
                 }
@@ -8259,7 +8286,8 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
                         .withNetwork(network)
                         .withDisplayName(config.SSID)
                         .withCreatorUid(config.creatorUid)
-                        .withLayer2Information(layer2Info);
+                        .withLayer2Information(layer2Info)
+                        .withoutIpReachabilityMonitor();
             }
             if (mContext.getResources().getBoolean(R.bool.config_wifiEnableApfOnNonPrimarySta)
                     || isPrimary()) {

@@ -100,6 +100,13 @@ flag {
 }
 
 flag {
+    name: "cached_scan_data"
+    namespace: "wifi"
+    description: "Control the API that get cached scan data"
+    bug: "269485350"
+}
+
+flag {
     name: "wpa_personal_usage"
     namespace: "wifi"
     description: "Control the API for wpa personal usage"
@@ -111,4 +118,40 @@ flag {
     namespace: "wifi"
     description: "Add new API to set the subscription id in the Wifi Info"
     bug: "236669534"
+}
+
+flag {
+    name: "mscs_configuration"
+    namespace: "wifi"
+    description: "Add new API to configure MSCS in the supplicant"
+    bug: "300870302"
+}
+
+flag {
+    name: "ranging_result_builder"
+    namespace: "wifi"
+    description: "Add new Builder API for RangeResult"
+    bug: "318765791"
+}
+
+flag {
+    name: "uri_parser"
+    namespace: "wifi"
+    description: "Control the API for parsing uri"
+    bug: "279169417"
+}
+
+flag {
+    name: "qos_r3_support"
+    namespace: "wifi"
+    description: "Add additional QoS fields to support QoS R3"
+    bug: "319313500"
+}
+
+flag {
+    name: "android_v_wifi_api"
+    namespace: "wifi"
+    description: "For new API added to Android V"
+    bug: "319927407"
+    is_fixed_read_only: true
 }

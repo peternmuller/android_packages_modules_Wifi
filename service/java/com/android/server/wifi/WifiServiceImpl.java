@@ -125,6 +125,7 @@ import android.net.wifi.IWifiLowLatencyLockListener;
 import android.net.wifi.IWifiNetworkSelectionConfigListener;
 import android.net.wifi.IWifiNetworkStateChangedListener;
 import android.net.wifi.IWifiVerboseLoggingStatusChangedListener;
+import android.net.wifi.MscsParams;
 import android.net.wifi.QosPolicyParams;
 import android.net.wifi.ScanResult;
 import android.net.wifi.SoftApCapability;
@@ -722,6 +723,7 @@ public class WifiServiceImpl extends BaseWifiService {
     private void updateLocationMode() {
         mIsLocationModeEnabled = mWifiPermissionsUtil.isLocationModeEnabled();
         mWifiConnectivityManager.setLocationModeEnabled(mIsLocationModeEnabled);
+        mWifiNative.setLocationModeEnabled(mIsLocationModeEnabled);
     }
 
     /**
@@ -3065,7 +3067,11 @@ public class WifiServiceImpl extends BaseWifiService {
     }
 
     @Override
-    public void getWifiActivityEnergyInfoAsync(IOnWifiActivityEnergyInfoListener listener) {
+    public void getWifiActivityEnergyInfoAsync(@NonNull IOnWifiActivityEnergyInfoListener
+            listener) {
+        if (listener == null) {
+            throw new IllegalArgumentException("listener should not be null");
+        }
         enforceAccessPermission();
         if (mVerboseLoggingEnabled) {
             mLog.info("getWifiActivityEnergyInfoAsync uid=%")
@@ -5357,6 +5363,8 @@ public class WifiServiceImpl extends BaseWifiService {
                 pw.println("Wlan Wake Reasons:" + mWifiNative.getWlanWakeReasonCount());
                 pw.println();
                 mWifiConfigManager.dump(fd, pw, args);
+                pw.println();
+                pw.println("WifiApConfigStore config: " + mWifiApConfigStore.getApConfiguration());
                 pw.println();
                 mPasspointManager.dump(pw);
                 mWifiInjector.getPasspointNetworkNominateHelper().dump(pw);
@@ -8029,6 +8037,20 @@ public class WifiServiceImpl extends BaseWifiService {
         mWifiThreadRunner.post(() -> {
             mSettingsConfigStore.put(WIFI_WEP_ALLOWED, isAllowed);
             mWifiGlobals.setWepAllowed(isAllowed);
+            if (!isAllowed) {
+                for (ClientModeManager clientModeManager
+                        : mActiveModeWarden.getClientModeManagers()) {
+                    if (!(clientModeManager instanceof ConcreteClientModeManager)) {
+                        continue;
+                    }
+                    ConcreteClientModeManager cmm = (ConcreteClientModeManager) clientModeManager;
+                    WifiInfo info = cmm.getConnectionInfo();
+                    if (info != null
+                            && info.getCurrentSecurityType() == WifiInfo.SECURITY_TYPE_WEP) {
+                        clientModeManager.disconnect();
+                    }
+                }
+            }
         });
     }
 
@@ -8050,6 +8072,45 @@ public class WifiServiceImpl extends BaseWifiService {
                 listener.onResult(mSettingsConfigStore.get(WIFI_WEP_ALLOWED));
             } catch (RemoteException e) {
                 Log.e(TAG, e.getMessage());
+            }
+        });
+    }
+
+    /**
+     * See {@link WifiManager#enableMscs(MscsParams)}
+     */
+    @Override
+    public void enableMscs(@NonNull MscsParams mscsParams) {
+        int uid = Binder.getCallingUid();
+        if (!mWifiPermissionsUtil.checkManageWifiNetworkSelectionPermission(uid)) {
+            throw new SecurityException(
+                    "UID=" + uid + " is not allowed to set network selection config");
+        }
+        Objects.requireNonNull(mscsParams);
+        mWifiThreadRunner.post(() -> {
+            List<ClientModeManager> clientModeManagers =
+                    mActiveModeWarden.getInternetConnectivityClientModeManagers();
+            for (ClientModeManager cmm : clientModeManagers) {
+                mWifiNative.enableMscs(mscsParams, cmm.getInterfaceName());
+            }
+        });
+    }
+
+    /**
+     * See {@link WifiManager#disableMscs()}
+     */
+    @Override
+    public void disableMscs() {
+        int uid = Binder.getCallingUid();
+        if (!mWifiPermissionsUtil.checkManageWifiNetworkSelectionPermission(uid)) {
+            throw new SecurityException(
+                    "UID=" + uid + " is not allowed to set network selection config");
+        }
+        mWifiThreadRunner.post(() -> {
+            List<ClientModeManager> clientModeManagers =
+                    mActiveModeWarden.getInternetConnectivityClientModeManagers();
+            for (ClientModeManager cmm : clientModeManagers) {
+                mWifiNative.disableMscs(cmm.getInterfaceName());
             }
         });
     }

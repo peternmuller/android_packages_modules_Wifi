@@ -30,6 +30,8 @@ import android.hardware.wifi.RttType;
 import android.hardware.wifi.WifiChannelInfo;
 import android.hardware.wifi.WifiChannelWidthInMhz;
 import android.net.MacAddress;
+import android.net.wifi.ScanResult;
+import android.net.wifi.WifiAnnotations;
 import android.net.wifi.rtt.RangingRequest;
 import android.net.wifi.rtt.RangingResult;
 import android.net.wifi.rtt.ResponderConfig;
@@ -269,17 +271,43 @@ public class WifiRttControllerAidlImpl implements IWifiRttController {
                 }
                 rttResult.distanceSdInMm = 0;
             }
-            rangingResults.add(new RangingResult(
-                    halToFrameworkRttStatus(rttResult.status),
-                    MacAddress.fromBytes(rttResult.addr),
-                    rttResult.distanceInMm, rttResult.distanceSdInMm,
-                    rttResult.rssi / -2, rttResult.numberPerBurstPeer,
-                    rttResult.successNumber, lci, lcr, responderLocation,
-                    rttResult.timeStampInUs /  WifiRttController.CONVERSION_US_TO_MS,
-                    rttResult.type == RttType.TWO_SIDED, rttResult.channelFreqMHz,
-                    rttResult.packetBw));
+            rangingResults.add(new RangingResult.Builder()
+                    .setStatus(halToFrameworkRttStatus(rttResult.status))
+                    .setMacAddress(MacAddress.fromBytes(rttResult.addr))
+                    .setDistanceMm(rttResult.distanceInMm)
+                    .setDistanceStdDevMm(rttResult.distanceSdInMm)
+                    .setRssi(rttResult.rssi / -2)
+                    .setNumAttemptedMeasurements(rttResult.numberPerBurstPeer)
+                    .setNumSuccessfulMeasurements(rttResult.successNumber)
+                    .setLci(lci)
+                    .setLcr(lcr)
+                    .setUnverifiedResponderLocation(responderLocation)
+                    .setRangingTimestampMillis(
+                            rttResult.timeStampInUs / WifiRttController.CONVERSION_US_TO_MS)
+                    .set80211mcMeasurement(rttResult.type == RttType.TWO_SIDED_11MC)
+                    .setMeasurementChannelFrequencyMHz(rttResult.channelFreqMHz)
+                    .setMeasurementBandwidth(halToFrameworkChannelBandwidth(rttResult.packetBw))
+                    .build());
         }
         return rangingResults;
+    }
+
+    private static @WifiAnnotations.ChannelWidth int halToFrameworkChannelBandwidth(
+            @RttBw int packetBw) {
+        switch (packetBw) {
+            case RttBw.BW_20MHZ:
+                return ScanResult.CHANNEL_WIDTH_20MHZ;
+            case RttBw.BW_40MHZ:
+                return ScanResult.CHANNEL_WIDTH_40MHZ;
+            case RttBw.BW_80MHZ:
+                return ScanResult.CHANNEL_WIDTH_80MHZ;
+            case RttBw.BW_160MHZ:
+                return ScanResult.CHANNEL_WIDTH_160MHZ;
+            case RttBw.BW_320MHZ:
+                return ScanResult.CHANNEL_WIDTH_320MHZ;
+            default:
+                return RangingResult.UNSPECIFIED;
+        }
     }
 
     private static @WifiRttController.FrameworkRttStatus int halToFrameworkRttStatus(

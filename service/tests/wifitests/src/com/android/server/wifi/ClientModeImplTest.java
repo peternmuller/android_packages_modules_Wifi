@@ -1062,8 +1062,17 @@ public class ClientModeImplTest extends WifiBaseTest {
             }
         }).when(mWifiNetworkSelector).selectNetwork(any());
         String caps = "[RSN-OWE_TRANSITION]";
-        ScanResult scanResult = new ScanResult(WifiSsid.fromUtf8Text(ssid),
-                ssid, TEST_BSSID_STR, 1245, 0, caps, -78, 2412, 1025, 22, 33, 20, 0, 0, true);
+        ScanResult scanResult = new ScanResult.Builder(WifiSsid.fromUtf8Text(ssid),
+                TEST_BSSID_STR)
+                .setHessid(1245)
+                .setCaps(caps)
+                .setRssi(-78)
+                .setFrequency(2450)
+                .setTsf(1025)
+                .setDistanceCm(22)
+                .setDistanceSdCm(33)
+                .setIs80211McRTTResponder(true)
+                .build();
         ScanResult.InformationElement ie = createIE(ScanResult.InformationElement.EID_SSID,
                 ssid.getBytes(StandardCharsets.UTF_8));
         scanResult.informationElements = new ScanResult.InformationElement[]{ie};
@@ -1185,8 +1194,16 @@ public class ClientModeImplTest extends WifiBaseTest {
                 getGoogleGuestScanDetail(TEST_RSSI, TEST_BSSID_STR, sFreq));
         when(mScanDetailCache.getScanResult(TEST_BSSID_STR)).thenReturn(
                 getGoogleGuestScanDetail(TEST_RSSI, TEST_BSSID_STR, sFreq).getScanResult());
-        ScanResult scanResult = new ScanResult(WifiSsid.fromUtf8Text(sFilsSsid),
-                sFilsSsid, TEST_BSSID_STR, 1245, 0, "", -78, 2412, 1025, 22, 33, 20, 0, 0, true);
+        ScanResult scanResult = new ScanResult.Builder(WifiSsid.fromUtf8Text(sFilsSsid),
+                TEST_BSSID_STR)
+                .setHessid(1245)
+                .setRssi(-78)
+                .setFrequency(2450)
+                .setTsf(1025)
+                .setDistanceCm(22)
+                .setDistanceSdCm(33)
+                .setIs80211McRTTResponder(true)
+                .build();
         ScanResult.InformationElement ie = createIE(ScanResult.InformationElement.EID_SSID,
                 sFilsSsid.getBytes(StandardCharsets.UTF_8));
         scanResult.informationElements = new ScanResult.InformationElement[]{ie};
@@ -1324,8 +1341,16 @@ public class ClientModeImplTest extends WifiBaseTest {
                 getGoogleGuestScanDetail(TEST_RSSI, TEST_BSSID_STR, sFreq));
         when(mScanDetailCache.getScanResult(TEST_BSSID_STR)).thenReturn(
                 getGoogleGuestScanDetail(TEST_RSSI, TEST_BSSID_STR, sFreq).getScanResult());
-        ScanResult scanResult = new ScanResult(WifiSsid.fromUtf8Text(sFilsSsid),
-                sFilsSsid, TEST_BSSID_STR, 1245, 0, "", -78, 2412, 1025, 22, 33, 20, 0, 0, true);
+        ScanResult scanResult = new ScanResult.Builder(WifiSsid.fromUtf8Text(sFilsSsid),
+                TEST_BSSID_STR)
+                .setHessid(1245)
+                .setRssi(-78)
+                .setFrequency(2450)
+                .setTsf(1025)
+                .setDistanceCm(22)
+                .setDistanceSdCm(33)
+                .setIs80211McRTTResponder(true)
+                .build();
         ScanResult.InformationElement ie = createIE(ScanResult.InformationElement.EID_SSID,
                 sFilsSsid.getBytes(StandardCharsets.UTF_8));
         scanResult.informationElements = new ScanResult.InformationElement[]{ie};
@@ -6839,8 +6864,17 @@ public class ClientModeImplTest extends WifiBaseTest {
     private void setupFilsEnabledApInScanResult() {
         String caps = "[WPA2-EAP/SHA1+EAP/SHA256+EAP-FILS-SHA256-CCMP]"
                 + "[RSN-EAP/SHA1+EAP/SHA256+EAP-FILS-SHA256-CCMP][ESS]";
-        ScanResult scanResult = new ScanResult(WifiSsid.fromUtf8Text(sFilsSsid),
-                sFilsSsid, TEST_BSSID_STR, 1245, 0, caps, -78, 2412, 1025, 22, 33, 20, 0, 0, true);
+        ScanResult scanResult = new ScanResult.Builder(WifiSsid.fromUtf8Text(sFilsSsid),
+                TEST_BSSID_STR)
+                .setHessid(1245)
+                .setCaps(caps)
+                .setRssi(-78)
+                .setFrequency(2450)
+                .setTsf(1025)
+                .setDistanceCm(22)
+                .setDistanceSdCm(33)
+                .setIs80211McRTTResponder(true)
+                .build();
         ScanResult.InformationElement ie = createIE(ScanResult.InformationElement.EID_SSID,
                 sFilsSsid.getBytes(StandardCharsets.UTF_8));
         scanResult.informationElements = new ScanResult.InformationElement[]{ie};
@@ -7462,10 +7496,7 @@ public class ClientModeImplTest extends WifiBaseTest {
     }
 
     @Test
-    public void testIpReachabilityFailureStaticIpOrganicTriggersDisconnection() throws Exception {
-        when(mDeviceConfigFacade.isHandleRssiOrganicKernelFailuresEnabled()).thenReturn(true);
-        assumeTrue(SdkLevel.isAtLeastT());
-
+    public void testIpReachabilityMonitorNotStartOnStaticIpConfiguration() throws Exception {
         final List<InetAddress> dnsServers = new ArrayList<>();
         dnsServers.add(InetAddresses.parseNumericAddress("8.8.8.8"));
         dnsServers.add(InetAddresses.parseNumericAddress("4.4.4.4"));
@@ -7499,19 +7530,9 @@ public class ClientModeImplTest extends WifiBaseTest {
         injectDhcpSuccess(dhcpResults);
         mLooper.dispatchAll();
         expectRegisterNetworkAgent((agentConfig) -> {}, (cap) -> {});
-        reset(mWifiNetworkAgent);
 
-        // normal behavior outside specific CC
-        when(mWifiGlobals.disableNudDisconnectsForWapiInSpecificCc()).thenReturn(true);
-        when(mWifiCountryCode.getCountryCode()).thenReturn("US");
-
-        // Trigger IP reachability failure and ensure we trigger a disconnection due to static IP.
-        ReachabilityLossInfoParcelable lossInfo =
-                new ReachabilityLossInfoParcelable("", ReachabilityLossReason.ORGANIC);
-        mIpClientCallback.onReachabilityFailure(lossInfo);
-        mLooper.dispatchAll();
-        verify(mWifiNative).disconnect(WIFI_IFACE_NAME);
-        verify(mWifiNetworkAgent, never()).unregisterAfterReplacement(anyInt());
+        verify(mIpClient).startProvisioning(mProvisioningConfigurationCaptor.capture());
+        assertFalse(mProvisioningConfigurationCaptor.getValue().usingIpReachabilityMonitor);
     }
 
     private void doIpReachabilityFailureTest(int lossReason, boolean shouldWifiDisconnect)
@@ -8302,8 +8323,17 @@ public class ClientModeImplTest extends WifiBaseTest {
     private void verifyTransitionDisableEvent(String caps, int indication, boolean shouldUpdate)
             throws Exception {
         final int networkId = FRAMEWORK_NETWORK_ID;
-        ScanResult scanResult = new ScanResult(WifiSsid.fromUtf8Text(sFilsSsid),
-                sFilsSsid, TEST_BSSID_STR, 1245, 0, caps, -78, 2412, 1025, 22, 33, 20, 0, 0, true);
+        ScanResult scanResult = new ScanResult.Builder(WifiSsid.fromUtf8Text(sFilsSsid),
+                TEST_BSSID_STR)
+                .setHessid(1245)
+                .setCaps(caps)
+                .setRssi(-78)
+                .setFrequency(2450)
+                .setTsf(1025)
+                .setDistanceCm(22)
+                .setDistanceSdCm(33)
+                .setIs80211McRTTResponder(true)
+                .build();
         ScanResult.InformationElement ie = createIE(ScanResult.InformationElement.EID_SSID,
                 sFilsSsid.getBytes(StandardCharsets.UTF_8));
         scanResult.informationElements = new ScanResult.InformationElement[]{ie};
@@ -9930,22 +9960,24 @@ public class ClientModeImplTest extends WifiBaseTest {
         link1.setChannel(TEST_CHANNEL);
         link1.setApMacAddress(MacAddress.fromString(TEST_BSSID_STR));
         link1.setLinkId(TEST_MLO_LINK_ID);
+        link1.setRssi(TEST_RSSI);
         MloLink link2 = new MloLink();
         link2.setBand(WifiScanner.WIFI_BAND_5_GHZ);
         link2.setChannel(TEST_CHANNEL_1);
         link2.setApMacAddress(MacAddress.fromString(TEST_BSSID_STR1));
         link2.setLinkId(TEST_MLO_LINK_ID_1);
+        link2.setRssi(TEST_RSSI);
         mloLinks.add(link1);
         mloLinks.add(link2);
 
         when(mScanResult.getApMldMacAddress()).thenReturn(TEST_AP_MLD_MAC_ADDRESS);
         when(mScanResult.getApMloLinkId()).thenReturn(TEST_MLO_LINK_ID);
         when(mScanResult.getAffiliatedMloLinks()).thenReturn(mloLinks);
+        mScanResult.level = TEST_RSSI;
 
         when(mWifiConfigManager.getScanDetailCacheForNetwork(FRAMEWORK_NETWORK_ID))
                 .thenReturn(mScanDetailCache);
         when(mScanDetailCache.getScanResult(any())).thenReturn(mScanResult);
-
     }
 
     private void setScanResultWithoutMloInfo() {
@@ -10329,13 +10361,22 @@ public class ClientModeImplTest extends WifiBaseTest {
     }
 
     private ScanResult makeScanResult(String ssid, String caps) {
-        ScanResult scanResult = new ScanResult(WifiSsid.fromUtf8Text(ssid.replace("\"", "")),
-                ssid, TEST_BSSID_STR, 1245, 0, caps, -78, 2412, 1025, 22, 33, 20, 0, 0, true);
+        ScanResult scanResult = new ScanResult.Builder(
+                WifiSsid.fromUtf8Text(ssid.replace("\"", "")),
+                TEST_BSSID_STR)
+                .setHessid(1245)
+                .setCaps(caps)
+                .setRssi(-78)
+                .setFrequency(2450)
+                .setTsf(1025)
+                .setDistanceCm(22)
+                .setDistanceSdCm(33)
+                .setIs80211McRTTResponder(true)
+                .build();
         ScanResult.InformationElement ie = createIE(ScanResult.InformationElement.EID_SSID,
                 ssid.getBytes(StandardCharsets.UTF_8));
         scanResult.informationElements = new ScanResult.InformationElement[]{ie};
         return scanResult;
-
     }
 
     private void verifyConnectWithDisabledPskType(
@@ -10672,18 +10713,19 @@ public class ClientModeImplTest extends WifiBaseTest {
     @Test
     public void testEnableTdls() throws Exception {
         connect();
-        when(mWifiNative.getMaxSupportedConcurrentTdlsSessions(WIFI_IFACE_NAME)).thenReturn(5);
+        when(mWifiNative.getMaxSupportedConcurrentTdlsSessions(WIFI_IFACE_NAME)).thenReturn(1);
         when(mWifiNative.getSupportedFeatureSet(WIFI_IFACE_NAME))
                 .thenReturn(WifiManager.WIFI_FEATURE_TDLS);
         when(mWifiNative.startTdls(eq(WIFI_IFACE_NAME), eq(TEST_TDLS_PEER_ADDR_STR), anyBoolean()))
                 .thenReturn(true);
-        assertEquals(5, mCmi.getMaxSupportedConcurrentTdlsSessions());
+        assertEquals(1, mCmi.getMaxSupportedConcurrentTdlsSessions());
         assertTrue(mCmi.isTdlsOperationCurrentlyAvailable());
-        mCmi.enableTdls(TEST_TDLS_PEER_ADDR_STR, true);
+        assertTrue(mCmi.enableTdls(TEST_TDLS_PEER_ADDR_STR, true));
         assertEquals(1, mCmi.getNumberOfEnabledTdlsSessions());
         verify(mWifiNative).startTdls(eq(WIFI_IFACE_NAME), eq(TEST_TDLS_PEER_ADDR_STR),
                 eq(true));
-        mCmi.enableTdls(TEST_TDLS_PEER_ADDR_STR, false);
+        assertFalse(mCmi.enableTdls(TEST_TDLS_PEER_ADDR_STR, true));
+        assertTrue(mCmi.enableTdls(TEST_TDLS_PEER_ADDR_STR, false));
         verify(mWifiNative).startTdls(eq(WIFI_IFACE_NAME), eq(TEST_TDLS_PEER_ADDR_STR),
                 eq(false));
         assertEquals(0, mCmi.getNumberOfEnabledTdlsSessions());
@@ -10785,6 +10827,28 @@ public class ClientModeImplTest extends WifiBaseTest {
         assertEquals(links.get(1).getBand(), WifiScanner.WIFI_BAND_5_GHZ);
         assertEquals(links.get(1).getChannel(), TEST_CHANNEL_1);
         assertEquals(links.get(1).getLinkId(), TEST_MLO_LINK_ID_1);
+
+        // Make sure the dynamic attributes (Tx link speed, Rx link speed and RSSI) are matching
+        // with poll results for associated links.
+        assertEquals(65, links.get(0).getTxLinkSpeedMbps());
+        assertEquals(54, links.get(0).getRxLinkSpeedMbps());
+        assertEquals(-42, links.get(0).getRssi());
+
+        // Make sure the RSSI is matching with scan cache for un-associated links
+        assertEquals(TEST_RSSI, links.get(1).getRssi());
+
+        // Send signal poll for un-associated link
+        signalPollResults = new WifiSignalPollResults();
+        signalPollResults.addEntry(TEST_MLO_LINK_ID_1, -42, 65, 54, sFreq);
+        when(mWifiNative.signalPoll(any())).thenReturn(signalPollResults);
+        mCmi.enableRssiPolling(true);
+        mCmi.sendMessage(ClientModeImpl.CMD_RSSI_POLL, 1);
+        mLooper.dispatchAll();
+        links = mWifiInfo.getAffiliatedMloLinks();
+
+        // Make sure the RSSI is matching with scan result for associated link
+        assertEquals(TEST_RSSI, links.get(0).getRssi());
+
     }
 
     /**

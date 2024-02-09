@@ -175,6 +175,7 @@ import android.net.wifi.IWifiLowLatencyLockListener;
 import android.net.wifi.IWifiNetworkSelectionConfigListener;
 import android.net.wifi.IWifiNetworkStateChangedListener;
 import android.net.wifi.IWifiVerboseLoggingStatusChangedListener;
+import android.net.wifi.MscsParams;
 import android.net.wifi.QosPolicyParams;
 import android.net.wifi.ScanResult;
 import android.net.wifi.SecurityParams;
@@ -8688,6 +8689,16 @@ public class WifiServiceImplTest extends WifiBaseTest {
         validateWifiActivityEnergyInfo(infoCaptor.getValue());
     }
 
+    /**
+     * Tests that {@link WifiServiceImpl#getWifiActivityEnergyInfoAsync} throws exception when
+     * listener is null
+     */
+    @Test
+    public void getWifiActivityEnergyInfoWithNullListener() throws Exception {
+        assertThrows(IllegalArgumentException.class,
+                () -> mWifiServiceImpl.getWifiActivityEnergyInfoAsync(null));
+    }
+
     @Test
     public void testCarrierConfigChangeUpdateSoftApCapability() throws Exception {
         lenient().when(SubscriptionManager.getActiveDataSubscriptionId())
@@ -9130,8 +9141,18 @@ public class WifiServiceImplTest extends WifiBaseTest {
     }
 
     private List<ScanResult> createScanResultList() {
-        return Collections.singletonList(new ScanResult(WifiSsid.fromUtf8Text(TEST_SSID),
-                TEST_SSID, TEST_BSSID, 1245, 0, TEST_CAP, -78, 2450, 1025, 22, 33, 20, 0, 0, true));
+        return Collections.singletonList(new ScanResult.Builder(WifiSsid.fromUtf8Text(TEST_SSID),
+                TEST_BSSID)
+                .setHessid(1245)
+                .setCaps(TEST_CAP)
+                .setRssi(-78)
+                .setFrequency(2450)
+                .setTsf(1025)
+                .setDistanceCm(22)
+                .setDistanceSdCm(33)
+                .setChannelWidth(20)
+                .setIs80211McRTTResponder(true)
+                .build());
     }
 
     private void sendCountryCodeChangedBroadcast(String countryCode) {
@@ -11380,18 +11401,51 @@ public class WifiServiceImplTest extends WifiBaseTest {
 
     private List<ScanResult> createChannelDataScanResults() {
         List<ScanResult> scanResults = new ArrayList<>();
-        scanResults.add(
-                new ScanResult(WifiSsid.fromUtf8Text(TEST_SSID), TEST_SSID, TEST_BSSID, 1234, 0,
-                        TEST_CAP, -78, 2412, 1024, 22, 33, 20, 0, 0, true));
-        scanResults.add(
-                new ScanResult(WifiSsid.fromUtf8Text(TEST_SSID), TEST_SSID, TEST_BSSID, 1234, 0,
-                        TEST_CAP, -85, 2417, 1024, 22, 33, 20, 0, 0, true));
-        scanResults.add(
-                new ScanResult(WifiSsid.fromUtf8Text(TEST_SSID), TEST_SSID, TEST_BSSID, 1234, 0,
-                        TEST_CAP, -60, 5805, 1024, 22, 33, 20, 0, 0, true));
-        scanResults.add(
-                new ScanResult(WifiSsid.fromUtf8Text(TEST_SSID), TEST_SSID, TEST_BSSID, 1234, 0,
-                        TEST_CAP, -70, 5805, 1024, 22, 33, 20, 0, 0, true));
+
+        scanResults.add(new ScanResult.Builder(WifiSsid.fromUtf8Text(TEST_SSID), TEST_BSSID)
+                        .setHessid(1245)
+                        .setCaps(TEST_CAP)
+                        .setRssi(-78)
+                        .setFrequency(2412)
+                        .setTsf(1025)
+                        .setDistanceCm(22)
+                        .setDistanceSdCm(33)
+                        .setChannelWidth(20)
+                        .setIs80211McRTTResponder(true)
+                        .build());
+        scanResults.add(new ScanResult.Builder(WifiSsid.fromUtf8Text(TEST_SSID), TEST_BSSID)
+                .setHessid(1245)
+                .setCaps(TEST_CAP)
+                .setRssi(-85)
+                .setFrequency(2417)
+                .setTsf(1025)
+                .setDistanceCm(22)
+                .setDistanceSdCm(33)
+                .setChannelWidth(20)
+                .setIs80211McRTTResponder(true)
+                .build());
+        scanResults.add(new ScanResult.Builder(WifiSsid.fromUtf8Text(TEST_SSID), TEST_BSSID)
+                .setHessid(1245)
+                .setCaps(TEST_CAP)
+                .setRssi(-60)
+                .setFrequency(5805)
+                .setTsf(1025)
+                .setDistanceCm(22)
+                .setDistanceSdCm(33)
+                .setChannelWidth(20)
+                .setIs80211McRTTResponder(true)
+                .build());
+        scanResults.add(new ScanResult.Builder(WifiSsid.fromUtf8Text(TEST_SSID), TEST_BSSID)
+                .setHessid(1245)
+                .setCaps(TEST_CAP)
+                .setRssi(-70)
+                .setFrequency(5805)
+                .setTsf(1025)
+                .setDistanceCm(22)
+                .setDistanceSdCm(33)
+                .setChannelWidth(20)
+                .setIs80211McRTTResponder(true)
+                .build());
         return scanResults;
     }
 
@@ -11835,11 +11889,28 @@ public class WifiServiceImplTest extends WifiBaseTest {
         mLooper.dispatchAll();
         verify(mWifiGlobals).setWepAllowed(true);
         verify(mWifiSettingsConfigStore).put(eq(WIFI_WEP_ALLOWED), eq(true));
+    }
 
+    @Test
+    public void testSetWepDisAllowedWithPermission() {
+        when(mWifiPermissionsUtil.checkNetworkSettingsPermission(anyInt())).thenReturn(true);
+        ConcreteClientModeManager cmmWep = mock(ConcreteClientModeManager.class);
+        ConcreteClientModeManager cmmWpa = mock(ConcreteClientModeManager.class);
+        WifiInfo mockWifiInfoWep = mock(WifiInfo.class);
+        WifiInfo mockWifiInfoWpa = mock(WifiInfo.class);
+        List<ClientModeManager> cmms = Arrays.asList(cmmWep, cmmWpa);
+        when(mActiveModeWarden.getClientModeManagers()).thenReturn(cmms);
+        when(mockWifiInfoWep.getCurrentSecurityType()).thenReturn(WifiInfo.SECURITY_TYPE_WEP);
+        when(mockWifiInfoWpa.getCurrentSecurityType()).thenReturn(WifiInfo.SECURITY_TYPE_PSK);
+        when(cmmWep.getConnectionInfo()).thenReturn(mockWifiInfoWep);
+        when(cmmWpa.getConnectionInfo()).thenReturn(mockWifiInfoWpa);
         mWifiServiceImpl.setWepAllowed(false);
         mLooper.dispatchAll();
-        verify(mWifiGlobals, times(2)).setWepAllowed(false);
+        verify(mWifiGlobals).setWepAllowed(false);
         verify(mWifiSettingsConfigStore).put(eq(WIFI_WEP_ALLOWED), eq(false));
+        // Only WEP disconnect
+        verify(cmmWep).disconnect();
+        verify(cmmWpa, never()).disconnect();
     }
 
     @Test
@@ -11874,5 +11945,40 @@ public class WifiServiceImplTest extends WifiBaseTest {
         mLooper.dispatchAll();
         verify(mWifiSettingsConfigStore, times(3)).get(eq(WIFI_WEP_ALLOWED));
         inOrder.verify(listener).onResult(false);
+    }
+
+    @Test
+    public void testEnableAndDisableMscsSuccess() {
+        when(mWifiPermissionsUtil.checkManageWifiNetworkSelectionPermission(anyInt()))
+                .thenReturn(true);
+        when(mActiveModeWarden.getInternetConnectivityClientModeManagers())
+                .thenReturn(Arrays.asList(mClientModeManager));
+        when(mClientModeManager.getInterfaceName()).thenReturn(WIFI_IFACE_NAME);
+
+        // Test enableMscs
+        MscsParams mscsParams = new MscsParams.Builder().build();
+        mWifiServiceImpl.enableMscs(mscsParams);
+        mLooper.dispatchAll();
+        verify(mWifiNative).enableMscs(eq(mscsParams), eq(WIFI_IFACE_NAME));
+
+        // Test disableMscs
+        mWifiServiceImpl.disableMscs();
+        mLooper.dispatchAll();
+        verify(mWifiNative).disableMscs(eq(WIFI_IFACE_NAME));
+    }
+
+    @Test
+    public void testEnableAndDisableMscsFailure() {
+        // Verify the permissions check on both methods
+        when(mWifiPermissionsUtil.checkManageWifiNetworkSelectionPermission(anyInt()))
+                .thenReturn(false);
+        assertThrows(SecurityException.class,
+                () -> mWifiServiceImpl.enableMscs(mock(MscsParams.class)));
+        assertThrows(SecurityException.class, () -> mWifiServiceImpl.disableMscs());
+
+        // Verify the nullity check on enableMscs
+        when(mWifiPermissionsUtil.checkManageWifiNetworkSelectionPermission(anyInt()))
+                .thenReturn(true);
+        assertThrows(NullPointerException.class, () -> mWifiServiceImpl.enableMscs(null));
     }
 }

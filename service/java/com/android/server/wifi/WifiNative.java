@@ -32,6 +32,7 @@ import android.net.MacAddress;
 import android.net.TrafficStats;
 import android.net.apf.ApfCapabilities;
 import android.net.wifi.CoexUnsafeChannel;
+import android.net.wifi.MscsParams;
 import android.net.wifi.OuiKeyedData;
 import android.net.wifi.QosPolicyParams;
 import android.net.wifi.ScanResult;
@@ -43,6 +44,7 @@ import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiContext;
 import android.net.wifi.WifiManager;
 import android.net.wifi.WifiScanner;
+import android.net.wifi.WifiScanner.ScanData;
 import android.net.wifi.WifiSsid;
 import android.net.wifi.nl80211.DeviceWiphyCapabilities;
 import android.net.wifi.nl80211.NativeScanResult;
@@ -59,6 +61,7 @@ import android.util.ArrayMap;
 import android.util.ArraySet;
 import android.util.Log;
 import android.util.SparseArray;
+import android.util.SparseIntArray;
 
 import com.android.internal.annotations.Immutable;
 import com.android.internal.annotations.VisibleForTesting;
@@ -86,6 +89,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -133,6 +137,14 @@ public class WifiNative {
     private InterfaceObserverInternal mInterfaceObserver;
     private InterfaceEventCallback mInterfaceListener;
     private @WifiManager.MloMode int mCachedMloMode = WifiManager.MLO_MODE_DEFAULT;
+    private boolean mIsLocationModeEnabled = false;
+    private long mLastLocationModeEnabledTimeMs = 0;
+    /**
+     * Mapping of unknown AKMs configured in overlay config item
+     * config_wifiUnknownAkmToKnownAkmMapping to ScanResult security key management scheme
+     * (ScanResult.KEY_MGMT_XX)
+     */
+    @VisibleForTesting @Nullable SparseIntArray mUnknownAkmMap;
 
     public WifiNative(WifiVendorHal vendorHal,
                       SupplicantStaIfaceHal staIfaceHal, HostapdHal hostapdHal,
@@ -152,6 +164,70 @@ public class WifiNative {
         mBuildProperties = buildProperties;
         mWifiInjector = wifiInjector;
         mContext = wifiInjector.getContext();
+        initializeUnknownAkmMapping();
+    }
+
+    private void initializeUnknownAkmMapping() {
+        String[] unknownAkmMapping =
+                mContext.getResources()
+                        .getStringArray(R.array.config_wifiUnknownAkmToKnownAkmMapping);
+        if (unknownAkmMapping == null) {
+            return;
+        }
+        for (String line : unknownAkmMapping) {
+            if (line == null) {
+                continue;
+            }
+            String[] items = line.split(",");
+            if (items.length != 2) {
+                Log.e(
+                        TAG,
+                        "Failed to parse config_wifiUnknownAkmToKnownAkmMapping line="
+                                + line
+                                + ". Should contain only two values separated by comma");
+                continue;
+            }
+            try {
+                int unknownAkm = Integer.parseInt(items[0].trim());
+                int knownAkm = Integer.parseInt(items[1].trim());
+                // Convert the OEM configured known AKM suite selector to
+                // ScanResult security key management scheme(ScanResult.KEY_MGMT_XX)*/
+                int keyMgmtScheme =
+                        InformationElementUtil.Capabilities.akmToScanResultKeyManagementScheme(
+                                knownAkm);
+                if (keyMgmtScheme != ScanResult.KEY_MGMT_UNKNOWN) {
+                    if (mUnknownAkmMap == null) {
+                        mUnknownAkmMap = new SparseIntArray();
+                    }
+                    mUnknownAkmMap.put(unknownAkm, keyMgmtScheme);
+                    Log.d(
+                            TAG,
+                            "unknown AKM = "
+                                    + unknownAkm
+                                    + " - converted keyMgmtScheme: "
+                                    + keyMgmtScheme);
+                } else {
+                    Log.e(
+                            TAG,
+                            "Known AKM: "
+                                    + knownAkm
+                                    + " is not defined in the framework."
+                                    + " Hence Failed to add AKM: "
+                                    + unknownAkm
+                                    + " in UnknownAkmMap."
+                                    + " Parsed config from overlay: "
+                                    + line);
+                }
+            } catch (Exception e) {
+                // failure to parse. Something is wrong with the configuration.
+                Log.e(
+                        TAG,
+                        "Parsing config_wifiUnknownAkmToKnownAkmMapping line="
+                                + line
+                                + ". Exception occurred:"
+                                + e);
+            }
+        }
     }
 
     /**
@@ -190,7 +266,7 @@ public class WifiNative {
         @Override
         public void onSoftApChannelSwitched(int frequency, int bandwidth) {
             mSoftApHalCallback.onInfoChanged(mIfaceName, frequency, bandwidth,
-                    ScanResult.WIFI_STANDARD_UNKNOWN, null);
+                    ScanResult.WIFI_STANDARD_UNKNOWN, null, Collections.emptyList());
         }
 
         @Override
@@ -248,9 +324,12 @@ public class WifiNative {
          *                     indication that the SoftAp is not enabled.
          * @param bandwidth The new bandwidth of the SoftAp.
          * @param generation The new generation of the SoftAp.
+         * @param vendorData List of {@link OuiKeyedData} containing vendor-specific configuration
+         *                   data, or empty list if not provided.
          */
         void onInfoChanged(String apIfaceInstance, int frequency, int bandwidth,
-                int generation, MacAddress apIfaceInstanceMacAddress);
+                int generation, MacAddress apIfaceInstanceMacAddress,
+                @NonNull List<OuiKeyedData> vendorData);
         /**
          * Invoked when there is a change in the associated station (STA).
          *
@@ -1812,7 +1891,7 @@ public class WifiNative {
             }
         }
         if (mMockWifiModem != null
-                && mMockWifiModem.getIsMethodConfigured(
+                && mMockWifiModem.isMethodConfigured(
                 MockWifiServiceUtil.MOCK_NL80211_SERVICE, "getScanResults")) {
             Log.i(TAG, "getScanResults was called from mock wificond");
             return convertNativeScanResults(ifaceName, mMockWifiModem.getWifiNl80211Manager()
@@ -1870,7 +1949,7 @@ public class WifiNative {
      */
     public ArrayList<ScanDetail> getPnoScanResults(@NonNull String ifaceName) {
         if (mMockWifiModem != null
-                && mMockWifiModem.getIsMethodConfigured(
+                && mMockWifiModem.isMethodConfigured(
                     MockWifiServiceUtil.MOCK_NL80211_SERVICE, "getPnoScanResults")) {
             Log.i(TAG, "getPnoScanResults was called from mock wificond");
             return convertNativeScanResults(ifaceName, mMockWifiModem.getWifiNl80211Manager()
@@ -1912,8 +1991,12 @@ public class WifiNative {
                     InformationElementUtil.parseInformationElements(result.getInformationElements());
             InformationElementUtil.Capabilities capabilities =
                     new InformationElementUtil.Capabilities();
-            capabilities.from(ies, result.getCapabilities(), mIsEnhancedOpenSupported,
-                              result.getFrequencyMhz());
+            capabilities.from(
+                    ies,
+                    result.getCapabilities(),
+                    mIsEnhancedOpenSupported,
+                    result.getFrequencyMhz(),
+                    mUnknownAkmMap);
             String flags = capabilities.generateCapabilitiesString();
             NetworkDetail networkDetail;
             try {
@@ -1986,7 +2069,7 @@ public class WifiNative {
      */
     public boolean startPnoScan(@NonNull String ifaceName, PnoSettings pnoSettings) {
         if (mMockWifiModem != null
-                && mMockWifiModem.getIsMethodConfigured(
+                && mMockWifiModem.isMethodConfigured(
                 MockWifiServiceUtil.MOCK_NL80211_SERVICE, "startPnoScan")) {
             Log.i(TAG, "startPnoScan was called from mock wificond");
             return mMockWifiModem.getWifiNl80211Manager()
@@ -3512,6 +3595,62 @@ public class WifiNative {
     }
 
     /**
+     * Sets whether global location mode is enabled.
+     */
+    public void setLocationModeEnabled(boolean enabled) {
+        if (!mIsLocationModeEnabled && enabled) {
+            mLastLocationModeEnabledTimeMs = SystemClock.elapsedRealtime();
+        }
+        Log.d(TAG, "mIsLocationModeEnabled " + enabled
+                + " mLastLocationModeEnabledTimeMs " + mLastLocationModeEnabledTimeMs);
+        mIsLocationModeEnabled = enabled;
+    }
+
+    @NonNull
+    private ScanResult[] getCachedScanResultsFilteredByLocationModeEnabled(
+            @NonNull ScanResult[] scanResults) {
+        List<ScanResult> resultList = new ArrayList<ScanResult>();
+        for (ScanResult scanResult : scanResults) {
+            if (mIsLocationModeEnabled
+                     && scanResult.timestamp >=  mLastLocationModeEnabledTimeMs * 1000) {
+                resultList.add(scanResult);
+            }
+        }
+        return resultList.toArray(new ScanResult[0]);
+    }
+
+    /**
+     * Gets the cached scan data from the given client interface
+     */
+    @Nullable
+    ScanData getCachedScanResults(String ifaceName) {
+        ScanData scanData = mWifiVendorHal.getCachedScanData(ifaceName);
+        if (scanData == null || scanData.getResults() == null) {
+            return null;
+        }
+        ScanResult[] results = getCachedScanResultsFilteredByLocationModeEnabled(
+                scanData.getResults());
+        return new ScanData(0, 0, 0, scanData.getScannedBands(), results);
+    }
+
+    /**
+     * Gets the cached scan data from all client interfaces
+     */
+    @NonNull
+    public ScanData getCachedScanResultsFromAllClientIfaces() {
+        ScanData consolidatedScanData = new ScanData();
+        Set<String> ifaceNames = getClientInterfaceNames();
+        for (String ifaceName : ifaceNames) {
+            ScanData scanData = getCachedScanResults(ifaceName);
+            if (scanData == null) {
+                continue;
+            }
+            consolidatedScanData.addResults(scanData.getResults());
+        }
+        return consolidatedScanData;
+    }
+
+    /**
      * Gets the latest link layer stats
      * @param ifaceName Name of the interface.
      */
@@ -3781,12 +3920,14 @@ public class WifiNative {
         public boolean is11bMode;
         /** Indicates the AP support for TID-to-link mapping negotiation. */
         public boolean apTidToLinkMapNegotiationSupported;
+        public @NonNull List<OuiKeyedData> vendorData;
         ConnectionCapabilities() {
             wifiStandard = ScanResult.WIFI_STANDARD_UNKNOWN;
             channelBandwidth = ScanResult.CHANNEL_WIDTH_20MHZ;
             maxNumberTxSpatialStreams = 1;
             maxNumberRxSpatialStreams = 1;
             is11bMode = false;
+            vendorData = Collections.emptyList();
         }
     }
 
@@ -3810,7 +3951,7 @@ public class WifiNative {
     @Nullable
     public WifiSignalPollResults signalPoll(@NonNull String ifaceName) {
         if (mMockWifiModem != null
-                && mMockWifiModem.getIsMethodConfigured(
+                && mMockWifiModem.isMethodConfigured(
                     MockWifiServiceUtil.MOCK_NL80211_SERVICE, "signalPoll")) {
             Log.i(TAG, "signalPoll was called from mock wificond");
             WifiNl80211Manager.SignalPollResult result =
@@ -4168,6 +4309,9 @@ public class WifiNative {
      * @param pw PrintWriter to write dump to
      */
     protected void dump(PrintWriter pw) {
+        pw.println("Dump of " + TAG);
+        pw.println("mIsLocationModeEnabled: " + mIsLocationModeEnabled);
+        pw.println("mLastLocationModeEnabledTimeMs: " + mLastLocationModeEnabledTimeMs);
         mHostapdHal.dump(pw);
     }
 
@@ -5303,4 +5447,25 @@ public class WifiNative {
     public boolean setAfcChannelAllowance(WifiChip.AfcChannelAllowance afcChannelAllowance) {
         return mWifiVendorHal.setAfcChannelAllowance(afcChannelAllowance);
     }
+
+    /**
+     * Enable Mirrored Stream Classification Service (MSCS) and configure using
+     * the provided configuration values.
+     *
+     * @param mscsParams {@link MscsParams} object containing the configuration parameters.
+     * @param ifaceName Name of the interface.
+     */
+    public void enableMscs(@NonNull MscsParams mscsParams, String ifaceName) {
+        mSupplicantStaIfaceHal.enableMscs(mscsParams, ifaceName);
+    }
+
+    /**
+     * Disable Mirrored Stream Classification Service (MSCS).
+     *
+     * @param ifaceName Name of the interface.
+     */
+    public void disableMscs(String ifaceName) {
+        mSupplicantStaIfaceHal.disableMscs(ifaceName);
+    }
+
 }
