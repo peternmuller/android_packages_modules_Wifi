@@ -2144,7 +2144,7 @@ public class ActiveModeWarden {
             }
 
             @Override
-            String getMessageLogRec(int what) {
+            public String getMessageLogRec(int what) {
                 return ActiveModeWarden.class.getSimpleName() + "."
                         + DefaultState.class.getSimpleName() + "." + getWhatToString(what);
             }
@@ -2177,17 +2177,17 @@ public class ActiveModeWarden {
             }
 
             @Override
-            String getMessageLogRec(int what) {
+            public String getMessageLogRec(int what) {
                 return ActiveModeWarden.class.getSimpleName() + "."
                         + DefaultState.class.getSimpleName() + "." + getWhatToString(what);
             }
 
             @Override
-            void enterImpl() {
+            public void enterImpl() {
             }
 
             @Override
-            void exitImpl() {
+            public void exitImpl() {
             }
 
             private void checkAndHandleAirplaneModeState() {

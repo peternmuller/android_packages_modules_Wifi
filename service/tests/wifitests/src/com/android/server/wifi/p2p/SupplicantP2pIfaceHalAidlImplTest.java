@@ -19,8 +19,10 @@ import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assume.assumeTrue;
 import static org.mockito.AdditionalMatchers.aryEq;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyBoolean;
@@ -29,6 +31,7 @@ import static org.mockito.Matchers.anyInt;
 import static org.mockito.Matchers.anyLong;
 import static org.mockito.Matchers.anyString;
 import static org.mockito.Matchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doReturn;
@@ -50,27 +53,33 @@ import android.hardware.wifi.supplicant.IfaceInfo;
 import android.hardware.wifi.supplicant.MacAddress;
 import android.hardware.wifi.supplicant.MiracastMode;
 import android.hardware.wifi.supplicant.P2pConnectInfo;
+import android.hardware.wifi.supplicant.P2pExtListenInfo;
 import android.hardware.wifi.supplicant.P2pFrameTypeMask;
 import android.hardware.wifi.supplicant.SupplicantStatusCode;
 import android.hardware.wifi.supplicant.WpsProvisionMethod;
 import android.net.wifi.CoexUnsafeChannel;
+import android.net.wifi.OuiKeyedData;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WpsInfo;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pDevice;
+import android.net.wifi.p2p.WifiP2pExtListenParams;
 import android.net.wifi.p2p.WifiP2pGroup;
 import android.net.wifi.p2p.WifiP2pGroupList;
 import android.net.wifi.p2p.WifiP2pManager;
 import android.net.wifi.p2p.nsd.WifiP2pServiceInfo;
 import android.os.IBinder;
+import android.os.PersistableBundle;
 import android.os.RemoteException;
 import android.os.ServiceSpecificException;
 import android.text.TextUtils;
 
 import androidx.test.filters.SmallTest;
 
+import com.android.modules.utils.build.SdkLevel;
 import com.android.server.wifi.WifiBaseTest;
 import com.android.server.wifi.WifiInjector;
+import com.android.server.wifi.WifiNative;
 import com.android.server.wifi.WifiSettingsConfigStore;
 import com.android.server.wifi.util.NativeUtil;
 
@@ -102,6 +111,10 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
     private @Mock WifiInjector mWifiInjector;
     private @Mock IBinder mServiceBinderMock;
     private @Mock WifiSettingsConfigStore mWifiSettingsConfigStore;
+    private @Mock WifiNative.SupplicantDeathEventHandler mSupplicantHalDeathHandler;
+
+    private ArgumentCaptor<IBinder.DeathRecipient> mSupplicantDeathCaptor =
+            ArgumentCaptor.forClass(IBinder.DeathRecipient.class);
 
     final int mServiceVersion = 2;
     final String mIfaceName = "virtual_interface_name";
@@ -1482,13 +1495,42 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
         setCachedServiceVersion(2);
 
         // Default value when service is not initialized.
-        assertFalse(mDut.configureExtListen(true, 123, 456));
+        assertFalse(mDut.configureExtListen(true, 123, 456, null));
         executeAndValidateInitializationSequence(false, false);
-        assertTrue(mDut.configureExtListen(true, 123, 456));
+        assertTrue(mDut.configureExtListen(true, 123, 456, null));
         // Turning listening off should reset intervals to 0s.
-        assertTrue(mDut.configureExtListen(false, 999, 999));
+        assertTrue(mDut.configureExtListen(false, 999, 999, null));
         // Disable listening.
-        assertTrue(mDut.configureExtListen(false, -1, -1));
+        assertTrue(mDut.configureExtListen(false, -1, -1, null));
+    }
+
+    /**
+     * Sunny day scenario for configureExtListenWithParams()
+     */
+    @Test
+    public void testConfigureExtListenWithParams_success() throws Exception {
+        assumeTrue(SdkLevel.isAtLeastV());
+        setCachedServiceVersion(3); // API requires HAL >= 3
+
+        OuiKeyedData vendorDataElement =
+                new OuiKeyedData.Builder(0x00aabbcc, new PersistableBundle()).build();
+        List<OuiKeyedData> vendorData = Arrays.asList(vendorDataElement);
+        WifiP2pExtListenParams extListenParams =
+                new WifiP2pExtListenParams.Builder().setVendorData(vendorData).build();
+
+        // Default value when service is not initialized.
+        assertFalse(mDut.configureExtListen(true, 123, 456, extListenParams));
+
+        executeAndValidateInitializationSequence(false, false);
+        assertTrue(mDut.configureExtListen(true, 123, 456, extListenParams));
+
+        // Disable listening.
+        assertTrue(mDut.configureExtListen(false, -1, -1, extListenParams));
+
+        // Legacy HAL API should not get called.
+        verify(mISupplicantP2pIfaceMock, atLeastOnce())
+                .configureExtListenWithParams(any(P2pExtListenInfo.class));
+        verify(mISupplicantP2pIfaceMock, never()).configureExtListen(anyInt(), anyInt());
     }
 
     /**
@@ -1499,8 +1541,8 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
         setCachedServiceVersion(2);
         executeAndValidateInitializationSequence(false, false);
         doNothing().when(mISupplicantP2pIfaceMock).configureExtListen(anyInt(), anyInt());
-        assertFalse(mDut.configureExtListen(true, -1, 1));
-        assertFalse(mDut.configureExtListen(true, 1, -1));
+        assertFalse(mDut.configureExtListen(true, -1, 1, null));
+        assertFalse(mDut.configureExtListen(true, 1, -1, null));
     }
 
     /**
@@ -1512,7 +1554,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
         executeAndValidateInitializationSequence(false, false);
         doThrow(new ServiceSpecificException(SupplicantStatusCode.FAILURE_UNKNOWN))
                 .when(mISupplicantP2pIfaceMock).configureExtListen(anyInt(), anyInt());
-        assertFalse(mDut.configureExtListen(true, 1, 1));
+        assertFalse(mDut.configureExtListen(true, 1, 1, null));
         // Check that service is still alive.
         assertTrue(mDut.isInitializationComplete());
     }
@@ -1527,7 +1569,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
         executeAndValidateInitializationSequence(false, false);
         doThrow(new RemoteException()).when(mISupplicantP2pIfaceMock)
                 .configureExtListen(anyInt(), anyInt());
-        assertFalse(mDut.configureExtListen(true, 1, 1));
+        assertFalse(mDut.configureExtListen(true, 1, 1, null));
         // Check service is dead.
         assertFalse(mDut.isInitializationComplete());
     }
@@ -2702,7 +2744,7 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
         }
 
         assertTrue(mDut.initialize());
-        verify(mServiceBinderMock).linkToDeath(any(IBinder.DeathRecipient.class), anyInt());
+        verify(mServiceBinderMock).linkToDeath(mSupplicantDeathCaptor.capture(), anyInt());
         assertTrue(mDut.isInitializationComplete());
 
         // Now setup the iface.
@@ -2750,5 +2792,48 @@ public class SupplicantP2pIfaceHalAidlImplTest extends WifiBaseTest {
             }
         }
         return new TestP2pServiceInfo(services);
+    }
+
+    /**
+     * Tests the terminate function and ensures that its callback gets called.
+     */
+    @Test
+    public void testTerminateAndDeadHandler() throws Exception {
+        executeAndValidateInitializationSequence(false, false);
+        mDut.terminate();
+        verify(mISupplicantMock).terminate();
+        // Trigger the supplicant died.
+        mSupplicantDeathCaptor.getValue().binderDied();
+        // Check that terminate cleared all internal state.
+        assertFalse(mDut.isInitializationComplete());
+    }
+
+    /**
+     * Tests the handling of supplicant death notification.
+     */
+    @Test
+    public void testSupplicantDeathCallback() throws Exception {
+        executeAndValidateInitializationSequence(false, false);
+        assertNotNull(mSupplicantDeathCaptor.getValue());
+        assertTrue(mDut.isInitializationComplete());
+        assertTrue(mDut.registerDeathHandler(mSupplicantHalDeathHandler));
+        mSupplicantDeathCaptor.getValue().binderDied();
+        assertFalse(mDut.isInitializationComplete());
+        verify(mSupplicantHalDeathHandler).onDeath();
+    }
+
+    /**
+     * Tests the handling of supplicant death unregister.
+     */
+    @Test
+    public void testSupplicantDeathCallbackUnregister() throws Exception {
+        executeAndValidateInitializationSequence(false, false);
+        assertNotNull(mSupplicantDeathCaptor.getValue());
+        assertTrue(mDut.isInitializationComplete());
+        assertTrue(mDut.registerDeathHandler(mSupplicantHalDeathHandler));
+        assertTrue(mDut.deregisterDeathHandler());
+        mSupplicantDeathCaptor.getValue().binderDied();
+        assertFalse(mDut.isInitializationComplete());
+        verify(mSupplicantHalDeathHandler, never()).onDeath();
     }
 }

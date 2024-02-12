@@ -93,6 +93,7 @@ import android.net.wifi.WifiManager.DeviceMobilityState;
 import android.net.wifi.WifiNetworkAgentSpecifier;
 import android.net.wifi.WifiNetworkSpecifier;
 import android.net.wifi.WifiSsid;
+import android.net.wifi.flags.Flags;
 import android.net.wifi.hotspot2.IProvisioningCallback;
 import android.net.wifi.hotspot2.OsuProvider;
 import android.net.wifi.nl80211.DeviceWiphyCapabilities;
@@ -1253,6 +1254,16 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
                 // nothing to do.
                 return;
             }
+
+            if (newConfig.isWifi7Enabled() != oldConfig.isWifi7Enabled()) {
+                Log.w(getTag(), "Wi-Fi " + (newConfig.isWifi7Enabled() ? "enabled" : "disabled")
+                        + " triggering disconnect");
+                mFrameworkDisconnectReasonOverride =
+                        WifiStatsLog.WIFI_DISCONNECT_REPORTED__FAILURE_CODE__DISCONNECT_NETWORK_WIFI7_TOGGLED;
+                sendMessage(CMD_DISCONNECT, StaEvent.DISCONNECT_NETWORK_WIFI7_TOGGLED);
+                return;
+            }
+
             boolean isMetered = WifiConfiguration.isMetered(newConfig, mWifiInfo);
             boolean wasMetered = WifiConfiguration.isMetered(oldConfig, mWifiInfo);
             // Check if user/app change meteredOverride or trusted for connected network.
@@ -1644,6 +1655,11 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
             }
             if (mContext.getResources().getBoolean(R.bool.config_wifi11axSupportOverride)) {
                 cap.setWifiStandardSupport(ScanResult.WIFI_STANDARD_11AX, true);
+            }
+            // Enable WPA3 SAE auto-upgrade offload
+            if (Flags.getDeviceCrossAkmRoamingSupport() && SdkLevel.isAtLeastV()
+                    && cap.getMaxNumberAkms() >= 2) {
+                mWifiGlobals.setWpa3SaeUpgradeOffloadEnabled();
             }
 
             mWifiNative.setDeviceWiphyCapabilities(mInterfaceName, cap);
@@ -4676,7 +4692,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         }
 
         @Override
-        String getMessageLogRec(int what) {
+        public String getMessageLogRec(int what) {
             return ClientModeImpl.class.getSimpleName() + "."
                     + ConnectableState.class.getSimpleName() + "." + getWhatToString(what);
         }
@@ -5621,7 +5637,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         }
 
         @Override
-        String getMessageLogRec(int what) {
+        public String getMessageLogRec(int what) {
             return ClientModeImpl.class.getSimpleName() + "."
                     + ConnectingOrConnectedState.class.getSimpleName() + "." + getWhatToString(
                     what);
@@ -6045,7 +6061,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         }
 
         @Override
-        String getMessageLogRec(int what) {
+        public String getMessageLogRec(int what) {
             return ClientModeImpl.class.getSimpleName() + "."
                     + L2ConnectingState.class.getSimpleName() + "." + getWhatToString(what);
         }
@@ -6472,7 +6488,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         }
 
         @Override
-        String getMessageLogRec(int what) {
+        public String getMessageLogRec(int what) {
             return ClientModeImpl.class.getSimpleName() + "."
                     + L2ConnectedState.class.getSimpleName() + "." + getWhatToString(what);
         }
@@ -6998,7 +7014,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         }
 
         @Override
-        String getMessageLogRec(int what) {
+        public String getMessageLogRec(int what) {
             return ClientModeImpl.class.getSimpleName() + "."
                     + WaitBeforeL3ProvisioningState.class.getSimpleName() + "."
                     + getWhatToString(what);
@@ -7039,7 +7055,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         }
 
         @Override
-        String getMessageLogRec(int what) {
+        public String getMessageLogRec(int what) {
             return ClientModeImpl.class.getSimpleName() + "."
                     + L3ProvisioningState.class.getSimpleName() + "." + getWhatToString(what);
         }
@@ -7133,7 +7149,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         }
 
         @Override
-        String getMessageLogRec(int what) {
+        public String getMessageLogRec(int what) {
             return ClientModeImpl.class.getSimpleName() + "." + RoamingState.class.getSimpleName()
                     + "." + getWhatToString(what);
         }
@@ -7332,7 +7348,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         }
 
         @Override
-        String getMessageLogRec(int what) {
+        public String getMessageLogRec(int what) {
             return ClientModeImpl.class.getSimpleName() + "."
                     + L3ConnectedState.class.getSimpleName() + "." + getWhatToString(what);
         }
@@ -7637,7 +7653,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         }
 
         @Override
-        String getMessageLogRec(int what) {
+        public String getMessageLogRec(int what) {
             return ClientModeImpl.class.getSimpleName() + "."
                     + DisconnectedState.class.getSimpleName() + "." + getWhatToString(what);
         }

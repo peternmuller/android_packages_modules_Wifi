@@ -479,4 +479,8 @@ interface IWifiManager
     void enableMscs(in MscsParams mscsParams);
 
     void disableMscs();
+
+    void setSendDhcpHostnameRestriction(String packageName, int restriction);
+
+    void querySendDhcpHostnameRestriction(String packageName, in IIntegerListener listener);
 }

@@ -17,10 +17,12 @@
 package com.android.server.wifi.p2p;
 
 import android.annotation.NonNull;
+import android.annotation.Nullable;
 import android.net.wifi.CoexUnsafeChannel;
 import android.net.wifi.ScanResult;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pDiscoveryConfig;
+import android.net.wifi.p2p.WifiP2pExtListenParams;
 import android.net.wifi.p2p.WifiP2pGroup;
 import android.net.wifi.p2p.WifiP2pGroupList;
 import android.net.wifi.p2p.WifiP2pManager;
@@ -30,6 +32,7 @@ import android.util.Log;
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.server.wifi.WifiGlobals;
 import com.android.server.wifi.WifiInjector;
+import com.android.server.wifi.WifiNative;
 
 import java.util.List;
 import java.util.Set;
@@ -615,27 +618,20 @@ public class SupplicantP2pIfaceHal {
     }
 
     /**
-     * Configure Extended Listen Timing.
-     *
-     * If enabled, listen state must be entered every |intervalInMillis| for at
-     * least |periodInMillis|. Both values have acceptable range of 1-65535
-     * (with interval obviously having to be larger than or equal to duration).
-     * If the P2P module is not idle at the time the Extended Listen Timing
-     * timeout occurs, the Listen State operation must be skipped.
-     *
-     * @param enable Enables or disables listening.
-     * @param periodInMillis Period in milliseconds.
-     * @param intervalInMillis Interval in milliseconds.
+     * Configure Extended Listen Timing. See comments for
+     * {@link ISupplicantP2pIfaceHal#configureExtListen(boolean, int, int, WifiP2pExtListenParams)}
      *
      * @return true, if operation was successful.
      */
-    public boolean configureExtListen(boolean enable, int periodInMillis, int intervalInMillis) {
+    public boolean configureExtListen(boolean enable, int periodInMillis, int intervalInMillis,
+            @Nullable WifiP2pExtListenParams extListenParams) {
         synchronized (mLock) {
             String methodStr = "configureExtListen";
             if (mP2pIfaceHal == null) {
                 return handleNullHal(methodStr);
             }
-            return mP2pIfaceHal.configureExtListen(enable, periodInMillis, intervalInMillis);
+            return mP2pIfaceHal.configureExtListen(
+                    enable, periodInMillis, intervalInMillis, extListenParams);
         }
     }
 
@@ -1161,6 +1157,48 @@ public class SupplicantP2pIfaceHal {
             }
             return mP2pIfaceHal.configureEapolIpAddressAllocationParams(ipAddressGo, ipAddressMask,
                     ipAddressStart, ipAddressEnd);
+        }
+    }
+
+    /**
+     * Terminate the supplicant daemon & wait for its death.
+     */
+    public void terminate() {
+        synchronized (mLock) {
+            String methodStr = "terminate";
+            if (mP2pIfaceHal == null) {
+                handleNullHal(methodStr);
+                return;
+            }
+            mP2pIfaceHal.terminate();
+        }
+    }
+
+    /**
+     * Registers a death notification for supplicant.
+     * @return Returns true on success.
+     */
+    public boolean registerDeathHandler(@NonNull WifiNative.SupplicantDeathEventHandler handler) {
+        synchronized (mLock) {
+            String methodStr = "registerDeathHandler";
+            if (mP2pIfaceHal == null) {
+                return handleNullHal(methodStr);
+            }
+            return mP2pIfaceHal.registerDeathHandler(handler);
+        }
+    }
+
+    /**
+     * Deregisters a death notification for supplicant.
+     * @return Returns true on success.
+     */
+    public boolean deregisterDeathHandler() {
+        synchronized (mLock) {
+            String methodStr = "deregisterDeathHandler";
+            if (mP2pIfaceHal == null) {
+                return handleNullHal(methodStr);
+            }
+            return mP2pIfaceHal.deregisterDeathHandler();
         }
     }
 }

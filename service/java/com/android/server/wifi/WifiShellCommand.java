@@ -181,6 +181,7 @@ public class WifiShellCommand extends BasicShellCommandHandler {
             "set-mock-wifimodem-service",
             "get-mock-wifimodem-service",
             "set-mock-wifimodem-methods",
+            "force-overlay-config-value",
     };
 
     private static final Map<String, Pair<NetworkRequest, ConnectivityManager.NetworkCallback>>
@@ -595,21 +596,22 @@ public class WifiShellCommand extends BasicShellCommandHandler {
                 }
                 case "imsi-protection-exemption-clear-user-approved-for-carrier": {
                     String arg1 = getNextArgRequired();
-                    int carrierId = -1;
                     try {
-                        carrierId = Integer.parseInt(arg1);
+                        final int carrierId = Integer.parseInt(arg1);
+                        mWifiThreadRunner.post(() ->
+                                mWifiCarrierInfoManager.clearImsiPrivacyExemptionForCarrier(
+                                        carrierId));
                     } catch (NumberFormatException e) {
                         pw.println("Invalid argument to "
                                 + "'imsi-protection-exemption-clear-user-approved-for-carrier' "
                                 + "- 'carrierId' must be an Integer");
                         return -1;
                     }
-                    mWifiCarrierInfoManager.clearImsiPrivacyExemptionForCarrier(carrierId);
                     return 0;
                 }
                 case "network-requests-remove-user-approved-access-points": {
                     String packageName = getNextArgRequired();
-                    mWifiNetworkFactory.removeApp(packageName);
+                    mWifiThreadRunner.post(() -> mWifiNetworkFactory.removeApp(packageName));
                     return 0;
                 }
                 case "clear-user-disabled-networks": {
@@ -2149,6 +2151,17 @@ public class WifiShellCommand extends BasicShellCommandHandler {
                         return -1;
                     }
                     return 0;
+                case "force-overlay-config-value":
+                    String value = getNextArgRequired();
+                    String configString = getNextArgRequired();
+                    boolean isEnabled = getNextArgRequiredTrueOrFalse("enabled", "disabled");
+                    if (mWifiService.forceOverlayConfigValue(configString, value, isEnabled)) {
+                        pw.print("true");
+                    } else {
+                        pw.print("fail to force overlay config value: " + configString);
+                        return -1;
+                    }
+                    return 0;
                 default:
                     return handleDefaultCommands(cmd);
             }
@@ -2962,7 +2975,16 @@ public class WifiShellCommand extends BasicShellCommandHandler {
         pw.println("       '31' - band 2.4, 5, 6 and 60 GHz with DFS channels");
         pw.println("  get-cached-scan-data");
         pw.println("    Gets scan data cached by the firmware");
-
+        pw.println("  force-overlay-config-value <overlayName> <configString> enabled|disabled");
+        pw.println("    Force overlay to a specified value. See below for supported overlays.");
+        pw.println("    <overlayName> - name of the overlay whose value is overridden.");
+        pw.println("        - Currently supports:");
+        pw.println("            - config_wifi_background_scan_support: accepts boolean "
+                + "<configString> = true|false.");
+        pw.println("    <configString> - override value of the overlay. See above for accepted "
+                + "values per overlay.");
+        pw.println("    enabled|disabled: enable the override or disable it and revert to using "
+                + "the built-in value.");
     }
 
     private void onHelpPrivileged(PrintWriter pw) {
