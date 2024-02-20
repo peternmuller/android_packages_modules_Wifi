@@ -33,6 +33,7 @@ import android.os.Parcelable;
 import android.util.Log;
 
 import com.android.modules.utils.build.SdkLevel;
+import com.android.wifi.flags.Flags;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -738,6 +739,8 @@ public final class ScanResult implements Parcelable {
     /** @hide */
     public static final long FLAG_80211az_NTB_RESPONDER           = 0x0000000000000004;
 
+    /** @hide */
+    public static final long FLAG_TWT_RESPONDER                    = 0x0000000000000008;
     /*
      * These flags are specific to the ScanResult class, and are not related to the |flags|
      * field of the per-BSS scan results from WPA supplicant.
@@ -781,6 +784,14 @@ public final class ScanResult implements Parcelable {
 
     public boolean isPasspointNetwork() {
         return (flags & FLAG_PASSPOINT_NETWORK) != 0;
+    }
+
+    /**
+     * @return whether AP is Target Wake Time (TWT) Responder.
+     */
+    @FlaggedApi(Flags.FLAG_ANDROID_V_WIFI_API)
+    public boolean isTwtResponder() {
+        return (flags & FLAG_TWT_RESPONDER) != 0;
     }
 
     /**
@@ -1449,7 +1460,7 @@ public final class ScanResult implements Parcelable {
         private int mCenterFreq1 = UNSPECIFIED;
         private boolean mIs80211McRTTResponder = false;
         private boolean mIs80211azNtbRTTResponder = false;
-
+        private boolean mIsTwtResponder = false;
         /** @hide */
         @NonNull
         public Builder setHessid(long hessid) {
@@ -1549,6 +1560,13 @@ public final class ScanResult implements Parcelable {
         }
 
         /** @hide */
+        @NonNull
+        public Builder setIsTwtResponder(boolean isTwtResponder) {
+            mIsTwtResponder = isTwtResponder;
+            return this;
+        }
+
+        /** @hide */
         public Builder(WifiSsid wifiSsid, String bssid) {
             mWifiSsid = wifiSsid;
             mBssid = bssid;
@@ -1598,6 +1616,7 @@ public final class ScanResult implements Parcelable {
             mCenterFreq1 = UNSPECIFIED;
             mIs80211McRTTResponder = false;
             mIs80211azNtbRTTResponder = false;
+            mIsTwtResponder = false;
         }
 
         /** @hide */
@@ -1639,6 +1658,7 @@ public final class ScanResult implements Parcelable {
         this.flags = 0;
         this.flags |= (builder.mIs80211McRTTResponder) ? FLAG_80211mc_RESPONDER : 0;
         this.flags |= (builder.mIs80211azNtbRTTResponder) ? FLAG_80211az_NTB_RESPONDER : 0;
+        this.flags |= (builder.mIsTwtResponder) ? FLAG_TWT_RESPONDER : 0;
         this.radioChainInfos = null;
         this.mApMldMacAddress = null;
     }
@@ -1824,6 +1844,8 @@ public final class ScanResult implements Parcelable {
         sb.append(", 80211azNtbResponder: ");
         sb.append(
                 ((flags & FLAG_80211az_NTB_RESPONDER) != 0) ? "is supported" : "is not supported");
+        sb.append(", TWT Responder: ");
+        sb.append(((flags & FLAG_TWT_RESPONDER) != 0) ? "yes" : "no");
         sb.append(", Radio Chain Infos: ").append(Arrays.toString(radioChainInfos));
         sb.append(", interface name: ").append(ifaceName);
 

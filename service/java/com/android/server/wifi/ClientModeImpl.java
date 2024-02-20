@@ -7345,6 +7345,12 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
             mWifiMetrics.noteFirstL3ConnectionAfterBoot(true);
             updateCurrentConnectionInfo();
             sendConnectedState();
+            // Set the roaming policy for the currently connected network
+            if (isPrimary() && getClientRoleForMetrics(config)
+                    != WifiStatsLog.WIFI_CONNECTION_RESULT_REPORTED__ROLE__ROLE_CLIENT_LOCAL_ONLY) {
+                mWifiInjector.getWifiRoamingModeManager().applyWifiRoamingMode(
+                        mInterfaceName, mWifiInfo.getSSID());
+            }
         }
 
         @Override
@@ -8476,7 +8482,8 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
             Log.v(TAG, "Idle mode changed: iface " + mInterfaceName
                     + " enabling roaming");
         }
-        enableRoaming(true);
+        mWifiInjector.getWifiRoamingModeManager().applyWifiRoamingMode(
+                mInterfaceName, mWifiInfo.getSSID());
     }
 
     @Override
