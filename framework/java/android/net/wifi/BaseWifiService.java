@@ -803,9 +803,14 @@ public class BaseWifiService extends IWifiManager.Stub {
         throw new UnsupportedOperationException();
     }
 
-    @Override
+    /** TO BE REMOVED */
     public void connect(WifiConfiguration config, int netId, IActionListener callback,
             @NonNull String packageName) {
+        throw new UnsupportedOperationException();
+    }
+    @Override
+    public void connect(WifiConfiguration config, int netId, IActionListener callback,
+            @NonNull String packageName, Bundle extras) {
         throw new UnsupportedOperationException();
     }
 
@@ -1199,6 +1204,11 @@ public class BaseWifiService extends IWifiManager.Stub {
 
     @Override
     public void queryD2dAllowedWhenInfraStaDisabled(@NonNull IBooleanListener listener) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean isPnoSupported() {
         throw new UnsupportedOperationException();
     }
 }

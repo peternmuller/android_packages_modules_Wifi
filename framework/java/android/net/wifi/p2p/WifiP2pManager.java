@@ -540,19 +540,19 @@ public class WifiP2pManager {
     /**
      * Run P2P scan on all channels.
      */
-    @FlaggedApi(Flags.FLAG_VENDOR_PARCELABLE_PARAMETERS)
+    @FlaggedApi(Flags.FLAG_ANDROID_V_WIFI_API)
     public static final int WIFI_P2P_SCAN_FULL = 0;
 
     /**
      * Run P2P scan only on social channels.
      */
-    @FlaggedApi(Flags.FLAG_VENDOR_PARCELABLE_PARAMETERS)
+    @FlaggedApi(Flags.FLAG_ANDROID_V_WIFI_API)
     public static final int WIFI_P2P_SCAN_SOCIAL = 1;
 
     /**
      * Run P2P scan only on a specific channel.
      */
-    @FlaggedApi(Flags.FLAG_VENDOR_PARCELABLE_PARAMETERS)
+    @FlaggedApi(Flags.FLAG_ANDROID_V_WIFI_API)
     public static final int WIFI_P2P_SCAN_SINGLE_FREQ = 2;
 
     /**
@@ -2182,7 +2182,7 @@ public class WifiP2pManager {
             android.Manifest.permission.NEARBY_WIFI_DEVICES,
             android.Manifest.permission.ACCESS_FINE_LOCATION
             }, conditional = true)
-    @FlaggedApi(Flags.FLAG_VENDOR_PARCELABLE_PARAMETERS)
+    @FlaggedApi(Flags.FLAG_ANDROID_V_WIFI_API)
     public void discoverPeers(
             @NonNull Channel channel,
             @Nullable WifiP2pDiscoveryConfig config,
@@ -2437,7 +2437,7 @@ public class WifiP2pManager {
             android.Manifest.permission.NEARBY_WIFI_DEVICES,
             android.Manifest.permission.ACCESS_FINE_LOCATION
             }, conditional = true)
-    @FlaggedApi(Flags.FLAG_VENDOR_PARCELABLE_PARAMETERS)
+    @FlaggedApi(Flags.FLAG_ANDROID_V_WIFI_API)
     public void startListening(
             @NonNull Channel channel,
             @NonNull WifiP2pExtListenParams params,
