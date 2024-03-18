@@ -386,7 +386,7 @@ public class XmlUtil {
         private static final String XML_TAG_IS_RESTRICTED = "IsRestricted";
         private static final String XML_TAG_SUBSCRIPTION_GROUP = "SubscriptionGroup";
         public static final String XML_TAG_BSSID_ALLOW_LIST = "bssidAllowList";
-        private static final String XML_TAG_IS_REPEATER_ENABLED = "RepeaterEnabled";
+        public static final String XML_TAG_IS_REPEATER_ENABLED = "RepeaterEnabled";
         public static final String XML_TAG_DPP_PRIVATE_EC_KEY = "DppPrivateEcKey";
         public static final String XML_TAG_DPP_CONNECTOR = "DppConnector";
         public static final String XML_TAG_DPP_CSIGN_KEY = "DppCSignKey";
@@ -517,7 +517,7 @@ public class XmlUtil {
             EncryptedData encryptedData = null;
             if (encryptionUtil != null) {
                 encryptedData = encryptionUtil.encrypt(data);
-                if (encryptedData == null) {
+                if (encryptedData == null && data != null && data.length != 0) {
                     // We silently fail encryption failures!
                     Log.wtf(TAG, "Encryption of " + tag + " failed");
                 }
