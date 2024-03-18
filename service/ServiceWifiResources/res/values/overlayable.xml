@@ -172,6 +172,7 @@
           <item type="integer" name="config_wifiDisableReasonByWrongPasswordThreshold" />
           <item type="integer" name="config_wifiDisableReasonAuthenticationNoSubscriptionThreshold" />
           <item type="integer" name="config_wifiDisableReasonConsecutiveFailuresThreshold" />
+          <item type="integer" name="config_wifiDisableTemporaryMaximumDurationMs" />
 
           <item type="integer" name="config_wifiDisableReasonAssociationRejectionDurationMs" />
           <item type="integer" name="config_wifiDisableReasonAuthenticationFailureDurationMs" />
@@ -205,7 +206,6 @@
           <item type="integer" name="config_wifiBssidBlocklistMonitorValidationFailureBaseBlockDurationMs" />
           <item type="bool" name="config_wifiScanHiddenNetworksScanOnlyMode" />
           <item type="integer" name="config_wifiHardwareSoftapMaxClientCount" />
-          <item type="bool" name="config_wifiIsUnusableEventMetricsEnabled" />
           <item type="integer" name="config_wifiDataStallMinTxBad" />
           <item type="integer" name="config_wifiDataStallMinTxSuccessWithoutRx" />
           <item type="bool" name="config_wifiLinkSpeedMetricsEnabled" />
@@ -345,6 +345,9 @@
           <item type="bool" name ="config_wifiRemainConnectedAfterIpProvisionTimeout" />
           <item type="bool" name ="config_wifiDisableNudDisconnectsForWapiInSpecificCc" />
           <item type="array" name="config_wifiUnknownAkmToKnownAkmMapping" />
+          <item type="integer" name="config_wifi80211azMinTimeBetweenNtbMeasurementsMicros"/>
+          <item type="integer" name="config_wifi80211azMaxTimeBetweenNtbMeasurementsMicros"/>
+          <item type="bool" name="config_wifiD2dAllowedControlSupportedWhenInfraStaDisabled" />
 
           <!-- Params from config.xml that can be overlayed -->
 

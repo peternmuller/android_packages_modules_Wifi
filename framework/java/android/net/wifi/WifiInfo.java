@@ -652,8 +652,7 @@ public class WifiInfo implements TransportInfo, Parcelable {
                     ? null : source.mNetworkKey;
             mApTidToLinkMappingNegotiationSupported =
                     source.mApTidToLinkMappingNegotiationSupported;
-            mVendorData = shouldRedactLocationSensitiveFields(redactions)
-                    ? Collections.emptyList() : new ArrayList<>(source.mVendorData);
+            mVendorData = new ArrayList<>(source.mVendorData);
         }
     }
 
@@ -737,7 +736,7 @@ public class WifiInfo implements TransportInfo, Parcelable {
          * Set the subscription ID.
          * @see WifiInfo#getSubscriptionId()
          */
-        @FlaggedApi(Flags.FLAG_ADD_SUBSCRIPTION_ID)
+        @FlaggedApi(Flags.FLAG_ANDROID_V_WIFI_API)
         @NonNull
         public Builder setSubscriptionId(int subId) {
             mWifiInfo.setSubscriptionId(subId);
@@ -1758,9 +1757,9 @@ public class WifiInfo implements TransportInfo, Parcelable {
     /**
      * Get the Passpoint unique identifier for the current connection
      *
-     * @return Passpoint unique identifier
-     * @hide
+     * @return Passpoint unique identifier, or null if this connection is not Passpoint.
      */
+    @FlaggedApi(Flags.FLAG_ANDROID_V_WIFI_API)
     public @Nullable String getPasspointUniqueId() {
         return mPasspointUniqueId;
     }
@@ -2139,7 +2138,7 @@ public class WifiInfo implements TransportInfo, Parcelable {
      * @hide
      */
     @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    @FlaggedApi(Flags.FLAG_VENDOR_PARCELABLE_PARAMETERS)
+    @FlaggedApi(Flags.FLAG_ANDROID_V_WIFI_API)
     @NonNull
     @SystemApi
     public List<OuiKeyedData> getVendorData() {
@@ -2157,7 +2156,7 @@ public class WifiInfo implements TransportInfo, Parcelable {
      * @hide
      */
     @RequiresApi(Build.VERSION_CODES.VANILLA_ICE_CREAM)
-    @FlaggedApi(Flags.FLAG_VENDOR_PARCELABLE_PARAMETERS)
+    @FlaggedApi(Flags.FLAG_ANDROID_V_WIFI_API)
     @SystemApi
     public void setVendorData(@NonNull List<OuiKeyedData> vendorData) {
         if (!SdkLevel.isAtLeastV()) {

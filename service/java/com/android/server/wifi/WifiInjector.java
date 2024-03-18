@@ -33,6 +33,7 @@ import android.net.NetworkCapabilities;
 import android.net.NetworkProvider;
 import android.net.wifi.WifiContext;
 import android.net.wifi.WifiScanner;
+import android.net.wifi.WifiTwtSession;
 import android.net.wifi.nl80211.WifiNl80211Manager;
 import android.os.BatteryManager;
 import android.os.BatteryStatsManager;
@@ -54,6 +55,7 @@ import com.android.internal.annotations.VisibleForTesting;
 import com.android.modules.utils.BackgroundThread;
 import com.android.modules.utils.build.SdkLevel;
 import com.android.server.wifi.aware.WifiAwareMetrics;
+import com.android.server.wifi.b2b.WifiRoamingModeManager;
 import com.android.server.wifi.coex.CoexManager;
 import com.android.server.wifi.hotspot2.PasspointManager;
 import com.android.server.wifi.hotspot2.PasspointNetworkNominateHelper;
@@ -266,6 +268,8 @@ public class WifiInjector {
     @NonNull private final WifiDialogManager mWifiDialogManager;
     @NonNull private final SsidTranslator mSsidTranslator;
     @NonNull private final ApplicationQosPolicyRequestHandler mApplicationQosPolicyRequestHandler;
+    private final WifiRoamingModeManager mWifiRoamingModeManager;
+    private final TwtManager mTwtManager;
 
     public WifiInjector(WifiContext context) {
         if (context == null) {
@@ -355,7 +359,7 @@ public class WifiInjector {
         mWifiP2pMonitor = new WifiP2pMonitor();
         mSupplicantP2pIfaceHal = new SupplicantP2pIfaceHal(mWifiP2pMonitor, mWifiGlobals, this);
         mWifiP2pNative = new WifiP2pNative(mWifiCondManager, mWifiNative, mWifiMetrics,
-                mWifiVendorHal, mSupplicantP2pIfaceHal, mHalDeviceManager, mPropertyService);
+                mWifiVendorHal, mSupplicantP2pIfaceHal, mHalDeviceManager, mPropertyService, this);
         SubscriptionManager subscriptionManager =
                 mContext.getSystemService(SubscriptionManager.class);
         if (SdkLevel.isAtLeastS()) {
@@ -423,7 +427,8 @@ public class WifiInjector {
                         mWifiScoreCard,
                         mScoringParams,
                         mWifiMetrics,
-                        mWifiPermissionsUtil);
+                        mWifiPermissionsUtil,
+                        mWifiGlobals);
         mWifiMetrics.setWifiBlocklistMonitor(mWifiBlocklistMonitor);
         // Config Manager
         mWifiConfigManager =
@@ -614,6 +619,12 @@ public class WifiInjector {
         // {@link LocationManager#getCurrentLocation}, so we need to pass mContextWithAttributionTag
         // instead of mContext to the AfcManager.
         mAfcManager = new AfcManager(mContextWithAttributionTag, this);
+        mWifiRoamingModeManager = new WifiRoamingModeManager(mWifiNative,
+                mActiveModeWarden, new WifiRoamingConfigStore(mWifiConfigManager,
+                mWifiConfigStore));
+
+        mTwtManager = new TwtManager(this, mCmiMonitor, mWifiNative, wifiHandler, mClock,
+                WifiTwtSession.MAX_TWT_SESSIONS, 1);
     }
 
     /**
@@ -673,6 +684,7 @@ public class WifiInjector {
         mWifiDialogManager.enableVerboseLogging(verboseEnabled);
         mExternalPnoScanRequestManager.enableVerboseLogging(verboseEnabled);
         mMultiInternetWifiNetworkFactory.enableVerboseLogging(verboseEnabled);
+        mWifiRoamingModeManager.enableVerboseLogging(verboseEnabled);
     }
 
     public UserManager getUserManager() {
@@ -1306,5 +1318,13 @@ public class WifiInjector {
     @NonNull
     public AlarmManager getAlarmManager() {
         return mAlarmManager;
+    }
+
+    public WifiRoamingModeManager getWifiRoamingModeManager() {
+        return mWifiRoamingModeManager;
+    }
+
+    public TwtManager getTwtManager() {
+        return mTwtManager;
     }
 }

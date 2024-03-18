@@ -13,6 +13,7 @@
 // limitations under the License.
 
 package {
+    default_team: "trendy_team_fwk_wifi_hal",
     default_applicable_licenses: ["Android-Apache-2.0"],
 }
 
@@ -138,6 +139,7 @@ java_library {
         "framework-annotations-lib",
         "framework-connectivity.stubs.module_lib",
         "framework-location.stubs.module_lib",
+        "framework-tethering.stubs.module_lib",
     ],
     installable: false,
     visibility: [
@@ -157,26 +159,30 @@ java_sdk_library {
     ],
 
     impl_only_libs: [
-        "framework-location.stubs.module_lib",
         "framework-connectivity.stubs.module_lib",
+        "framework-location.stubs.module_lib",
+        "framework-tethering.stubs.module_lib",
     ],
 
     public: {
         libs: [
-            "framework-location.stubs",
             "framework-connectivity.stubs",
+            "framework-location.stubs",
+            "framework-tethering.stubs",
         ],
     },
     system: {
         libs: [
-            "framework-location.stubs.system",
             "framework-connectivity.stubs.system",
+            "framework-location.stubs.system",
+            "framework-tethering.stubs.system",
         ],
     },
     module_lib: {
         libs: [
-            "framework-location.stubs.module_lib",
             "framework-connectivity.stubs.module_lib",
+            "framework-location.stubs.module_lib",
+            "framework-tethering.stubs.module_lib",
         ],
     },
     api_srcs: [
@@ -258,31 +264,4 @@ filegroup {
 platform_compat_config {
     name: "wifi-compat-config",
     src: ":framework-wifi-pre-jarjar",
-}
-
-java_api_contribution {
-    name: "framework-wifi-public-stubs",
-    api_surface: "public",
-    api_file: "api/current.txt",
-    visibility: [
-        "//build/orchestrator/apis",
-    ],
-}
-
-java_api_contribution {
-    name: "framework-wifi-system-stubs",
-    api_surface: "system",
-    api_file: "api/system-current.txt",
-    visibility: [
-        "//build/orchestrator/apis",
-    ],
-}
-
-java_api_contribution {
-    name: "framework-wifi-module-lib-stubs",
-    api_surface: "module-lib",
-    api_file: "api/module-lib-current.txt",
-    visibility: [
-        "//build/orchestrator/apis",
-    ],
 }

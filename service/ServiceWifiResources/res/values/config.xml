@@ -611,6 +611,9 @@
     <integer translatable="false" name="config_wifiDisableReasonAuthenticationNoSubscriptionThreshold"> 1 </integer>
     <integer translatable="false" name="config_wifiDisableReasonConsecutiveFailuresThreshold"> 1 </integer>
 
+    <!-- Integer for maximum value of temporarily disabled duration -->
+    <integer translatable="false" name="config_wifiDisableTemporaryMaximumDurationMs"> 64800000 </integer>
+
     <!-- Base duration to set a network disabled after validation failure happen-->
     <integer translatable="false" name="config_wifiDisableReasonAssociationRejectionDurationMs"> 300000 </integer>
     <integer translatable="false" name="config_wifiDisableReasonAuthenticationFailureDurationMs"> 300000 </integer>
@@ -677,9 +680,6 @@
 
     <!-- Indicates that hidden networks are to be scanned during scan only mode -->
     <bool translatable="false" name="config_wifiScanHiddenNetworksScanOnlyMode">false</bool>
-
-    <!-- Enable logging WifiIsUnusableEvent in metrics which gets triggered when wifi becomes unusable. -->
-    <bool translatable="false" name="config_wifiIsUnusableEventMetricsEnabled">true</bool>
 
     <!-- The minimum number of txBad the framework has to observe to trigger a wifi data stall. -->
     <integer translatable="false" name="config_wifiDataStallMinTxBad">1</integer>
@@ -1321,4 +1321,19 @@
              <item>unknownAkm2,knownAkm</item>
         -->
     </string-array>
+    <!-- Integer for minimum time between IEEE 802.11az non-trigger based ranging measurements in
+         microseconds. Note that ranging request converts this to units of 100 microseconds. So the
+         value should be a multiple of 100 microseconds. Non-zero values in this setting take
+         precedence over individual responder settings, effectively enforcing a system-wide minimum
+         measurement interval for non-trigger based ranging operations.. -->
+    <integer translatable="false" name="config_wifi80211azMinTimeBetweenNtbMeasurementsMicros">250000</integer>
+    <!-- Integer for maximum time between IEEE 802.11az non-trigger based ranging measurements in
+         microseconds. Note that ranging request converts this to units of 10 milliseconds. So the
+         value should be a multiple of 10000 microseconds. Non-zero values in this setting take
+         precedence over individual responder settings, effectively enforcing a system-wide maximum
+         measurement interval for non-trigger based ranging operations. -->
+    <integer translatable="false" name="config_wifi80211azMaxTimeBetweenNtbMeasurementsMicros">15000000</integer>
+
+    <!-- Boolean indicating whether the device supports d2d allowed control when infra STA is disabled  -->
+    <bool translatable="false" name ="config_wifiD2dAllowedControlSupportedWhenInfraStaDisabled">false</bool>
 </resources>

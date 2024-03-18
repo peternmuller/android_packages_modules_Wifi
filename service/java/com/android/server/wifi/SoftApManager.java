@@ -31,6 +31,7 @@ import android.net.wifi.ScanResult;
 import android.net.wifi.SoftApCapability;
 import android.net.wifi.SoftApConfiguration;
 import android.net.wifi.SoftApInfo;
+import android.net.wifi.SoftApState;
 import android.net.wifi.WifiAnnotations;
 import android.net.wifi.WifiClient;
 import android.net.wifi.WifiContext;
@@ -477,7 +478,8 @@ public class SoftApManager implements ActiveModeManager {
                         apConfig.getTargetMode(),
                         mCurrentSoftApConfiguration,
                         mCurrentSoftApCapability,
-                        mCountryCode);
+                        mCountryCode,
+                        apConfig.getTetheringRequest());
         if (mCurrentSoftApConfiguration != null) {
             mIsUnsetBssid = mCurrentSoftApConfiguration.getBssid() == null;
             if (mCurrentSoftApCapability.areFeaturesSupported(
@@ -636,7 +638,8 @@ public class SoftApManager implements ActiveModeManager {
                 mSpecifiedModeConfiguration.getTargetMode(),
                 mSpecifiedModeConfiguration.getSoftApConfiguration(),
                 mCurrentSoftApCapability,
-                mCountryCode);
+                mCountryCode,
+                mSpecifiedModeConfiguration.getTetheringRequest());
     }
 
     /**
@@ -705,7 +708,7 @@ public class SoftApManager implements ActiveModeManager {
     private void onL2Connected(@NonNull ConcreteClientModeManager clientModeManager) {
         Log.d(getTag(), "onL2Connected called");
         mStateMachine.sendMessage(SoftApStateMachine.CMD_HANDLE_WIFI_CONNECTED,
-                clientModeManager.getConnectionInfo());
+                clientModeManager);
     }
 
 
@@ -728,7 +731,11 @@ public class SoftApManager implements ActiveModeManager {
      */
     private void updateApState(int newState, int currentState, int reason) {
         mCurrentApState = newState;
-        mSoftApCallback.onStateChanged(newState, reason);
+        mSoftApCallback.onStateChanged(new SoftApState(
+                newState,
+                reason,
+                mSpecifiedModeConfiguration.getTetheringRequest(),
+                mApInterfaceName));
 
         //send the AP state change broadcast
         final Intent intent = new Intent(WifiManager.WIFI_AP_STATE_CHANGED_ACTION);
@@ -743,6 +750,7 @@ public class SoftApManager implements ActiveModeManager {
         intent.putExtra(WifiManager.EXTRA_WIFI_AP_INTERFACE_NAME, mApInterfaceName);
         intent.putExtra(
                 WifiManager.EXTRA_WIFI_AP_MODE, mSpecifiedModeConfiguration.getTargetMode());
+
         if (SdkLevel.isAtLeastSv2()) {
             mContext.sendBroadcastAsUser(intent, UserHandle.ALL,
                     android.Manifest.permission.ACCESS_WIFI_STATE);
@@ -1148,7 +1156,7 @@ public class SoftApManager implements ActiveModeManager {
             }
 
             @Override
-            String getMessageLogRec(int what) {
+            public String getMessageLogRec(int what) {
                 return SoftApManager.class.getSimpleName() + "." + IdleState.class.getSimpleName()
                         + "." + getWhatToString(what);
             }
@@ -1355,7 +1363,8 @@ public class SoftApManager implements ActiveModeManager {
                                         mSpecifiedModeConfiguration.getTargetMode(),
                                         newConfig,
                                         mCurrentSoftApCapability,
-                                        mCountryCode);
+                                        mCountryCode,
+                                        mSpecifiedModeConfiguration.getTetheringRequest());
                         Log.d(getTag(), "Configuration changed to " + newConfig);
                         // Idle mode, update all configurations.
                         mCurrentSoftApConfiguration = newConfig;
@@ -1388,19 +1397,19 @@ public class SoftApManager implements ActiveModeManager {
             }
 
             @Override
-            void enterImpl() {
+            public void enterImpl() {
                 mWifiInjector.getWifiCountryCode().registerListener(mCountryCodeChangeListener);
                 sendMessageDelayed(CMD_DRIVER_COUNTRY_CODE_CHANGE_TIMED_OUT, TIMEOUT_MS);
             }
 
             @Override
-            void exitImpl() {
+            public void exitImpl() {
                 mWifiInjector.getWifiCountryCode().unregisterListener(mCountryCodeChangeListener);
                 removeMessages(CMD_DRIVER_COUNTRY_CODE_CHANGE_TIMED_OUT);
             }
 
             @Override
-            boolean processMessageImpl(Message message) {
+            public boolean processMessageImpl(Message message) {
                 if (message.what == CMD_DRIVER_COUNTRY_CODE_CHANGED) {
                     if (!TextUtils.equals(mCountryCode, (String) message.obj)) {
                         Log.i(getTag(), "Ignore country code changed: " + message.obj);
@@ -1411,7 +1420,7 @@ public class SoftApManager implements ActiveModeManager {
                     mCurrentSoftApCapability.setCountryCode(mCountryCode);
                     mCurrentSoftApCapability =
                             ApConfigUtil.updateSoftApCapabilityWithAvailableChannelList(
-                                    mCurrentSoftApCapability, mContext, mWifiNative);
+                                    mCurrentSoftApCapability, mContext, mWifiNative, null);
                     updateSafeChannelFrequencyList();
                     if (isBridgedMode()) {
                         SoftApConfiguration tempConfig =
@@ -1460,7 +1469,7 @@ public class SoftApManager implements ActiveModeManager {
             }
 
             @Override
-            String getMessageLogRec(int what) {
+            public String getMessageLogRec(int what) {
                 return SoftApManager.class.getSimpleName() + "." + RunnerState.class.getSimpleName()
                         + "." + getWhatToString(what);
             }
@@ -1931,7 +1940,7 @@ public class SoftApManager implements ActiveModeManager {
             }
 
             @Override
-            String getMessageLogRec(int what) {
+            public String getMessageLogRec(int what) {
                 return SoftApManager.class.getSimpleName() + "." + RunnerState.class.getSimpleName()
                         + "." + getWhatToString(what);
             }
@@ -2086,7 +2095,8 @@ public class SoftApManager implements ActiveModeManager {
                                             mSpecifiedModeConfiguration.getTargetMode(),
                                             newConfig,
                                             mCurrentSoftApCapability,
-                                            mCountryCode);
+                                            mCountryCode,
+                                            mSpecifiedModeConfiguration.getTetheringRequest());
                             Log.d(getTag(), "Configuration changed to " + newConfig);
                             if (mCurrentSoftApConfiguration.getMaxNumberOfClients()
                                     != newConfig.getMaxNumberOfClients()) {
@@ -2173,30 +2183,44 @@ public class SoftApManager implements ActiveModeManager {
                             Log.d(getTag(), "Ignore wifi connected in single AP state");
                             break;
                         }
-                        WifiInfo wifiInfo = (WifiInfo) message.obj;
+                        ConcreteClientModeManager cmm = (ConcreteClientModeManager) message.obj;
+                        String wifiInterface = cmm.getInterfaceName();
+                        WifiInfo wifiInfo = cmm.getConnectionInfo();
                         int wifiFreq = wifiInfo.getFrequency();
+                        int wifiBand = ApConfigUtil.convertFrequencyToBand(wifiFreq);
+                        List<Integer> bands = new ArrayList<Integer>();
+                        bands.add(wifiBand);
                         String targetShutDownInstance = "";
                         if (wifiFreq > 0 && !mSafeChannelFrequencyList.contains(wifiFreq)) {
                             Log.i(getTag(), "Wifi connected to freq:" + wifiFreq
                                     + " which is unavailable for SAP");
                             for (SoftApInfo sapInfo : mCurrentSoftApInfoMap.values()) {
-                                if (ApConfigUtil.convertFrequencyToBand(sapInfo.getFrequency())
-                                          == ApConfigUtil.convertFrequencyToBand(wifiFreq)) {
+                                int sapBand =
+                                        ApConfigUtil.convertFrequencyToBand(sapInfo.getFrequency());
+                                if (sapBand == wifiBand) {
                                     targetShutDownInstance = sapInfo.getApInstanceIdentifier();
                                     Log.d(getTag(), "Remove the " + targetShutDownInstance
                                             + " instance which is running on the same band as "
                                             + "the wifi connection on an unsafe channel");
-                                    break;
+                                } else {
+                                    bands.add(sapBand);
                                 }
                             }
                             // Wifi may connect to different band as the SAP. For instances:
                             // Wifi connect to 6Ghz but bridged AP is running on 2.4Ghz + 5Ghz.
-                            // In this case, targetShutDownInstance will be empty, shutdown the
-                            // highest frequency instance.
-                            removeIfaceInstanceFromBridgedApIface(
-                                    TextUtils.isEmpty(targetShutDownInstance)
-                                    ? getHighestFrequencyInstance(mCurrentSoftApInfoMap.keySet())
-                                    : targetShutDownInstance);
+                            // In this case, targetShutDownInstance will be empty, check whether
+                            // the chip supports this combination. If not, shutdown the highest
+                            // frequency instance.
+                            if (TextUtils.isEmpty(targetShutDownInstance)) {
+                                // We have to use STA ifacename to query band combinations.
+                                if (!mWifiNative.isBandCombinationSupported(wifiInterface, bands)) {
+                                    removeIfaceInstanceFromBridgedApIface(
+                                            getHighestFrequencyInstance(
+                                                    mCurrentSoftApInfoMap.keySet()));
+                                }
+                            } else {
+                                removeIfaceInstanceFromBridgedApIface(targetShutDownInstance);
+                            }
                         }
                         break;
                     case CMD_PLUGGED_STATE_CHANGED:

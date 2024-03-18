@@ -18,6 +18,8 @@ package com.android.server.wifi;
 
 import static android.net.wifi.WifiManager.IFACE_IP_MODE_LOCAL_ONLY;
 import static android.net.wifi.WifiManager.IFACE_IP_MODE_TETHERED;
+import static android.net.wifi.WifiManager.SAP_START_FAILURE_GENERAL;
+import static android.net.wifi.WifiManager.WIFI_AP_STATE_FAILED;
 import static android.net.wifi.WifiManager.WIFI_STATE_DISABLED;
 import static android.net.wifi.WifiManager.WIFI_STATE_DISABLING;
 import static android.net.wifi.WifiManager.WIFI_STATE_ENABLED;
@@ -49,6 +51,7 @@ import android.net.wifi.IWifiConnectedNetworkScorer;
 import android.net.wifi.IWifiNetworkStateChangedListener;
 import android.net.wifi.SoftApCapability;
 import android.net.wifi.SoftApConfiguration;
+import android.net.wifi.SoftApState;
 import android.net.wifi.WifiConfiguration;
 import android.net.wifi.WifiInfo;
 import android.net.wifi.WifiManager;
@@ -718,6 +721,7 @@ public class ActiveModeWarden {
                 }
             }, new IntentFilter(TelephonyManager.ACTION_EMERGENCY_CALL_STATE_CHANGED));
         }
+        mWifiGlobals.setD2dStaConcurrencySupported(mWifiNative.isP2pStaConcurrencySupported());
         // Initialize the supported feature set.
         setSupportedFeatureSet(mWifiNative.getSupportedFeatureSet(null),
                 mWifiNative.isStaApConcurrencySupported(),
@@ -2085,8 +2089,9 @@ public class ActiveModeWarden {
                                     softApConfig.getTargetMode() == IFACE_IP_MODE_LOCAL_ONLY
                                             ? mLohsCallback : mSoftApCallback;
                             // need to notify SoftApCallback that start/stop AP failed
-                            callback.onStateChanged(WifiManager.WIFI_AP_STATE_FAILED,
-                                    WifiManager.SAP_START_FAILURE_GENERAL);
+                            callback.onStateChanged(new SoftApState(
+                                    WIFI_AP_STATE_FAILED, SAP_START_FAILURE_GENERAL,
+                                    softApConfig.getTetheringRequest(), null /* iface */));
                         }
                         break;
                     default:
@@ -2144,7 +2149,7 @@ public class ActiveModeWarden {
             }
 
             @Override
-            String getMessageLogRec(int what) {
+            public String getMessageLogRec(int what) {
                 return ActiveModeWarden.class.getSimpleName() + "."
                         + DefaultState.class.getSimpleName() + "." + getWhatToString(what);
             }
@@ -2177,17 +2182,17 @@ public class ActiveModeWarden {
             }
 
             @Override
-            String getMessageLogRec(int what) {
+            public String getMessageLogRec(int what) {
                 return ActiveModeWarden.class.getSimpleName() + "."
                         + DefaultState.class.getSimpleName() + "." + getWhatToString(what);
             }
 
             @Override
-            void enterImpl() {
+            public void enterImpl() {
             }
 
             @Override
-            void exitImpl() {
+            public void exitImpl() {
             }
 
             private void checkAndHandleAirplaneModeState() {
@@ -2275,7 +2280,8 @@ public class ActiveModeWarden {
         }
 
         private boolean shouldEnableSta() {
-            return mSettingsStore.isWifiToggleEnabled() || shouldEnableScanOnlyMode();
+            return (mSettingsStore.isWifiToggleEnabled() || shouldEnableScanOnlyMode())
+                    && !mSettingsStore.isSatelliteModeOn();
         }
 
         private void handleStaToggleChangeInDisabledState(WorkSource requestorWs) {
@@ -2803,6 +2809,9 @@ public class ActiveModeWarden {
         if (!mWifiGlobals.isWpaPersonalDeprecated()) {
             // The WPA didn't be deprecated, set it.
             additionalFeatureSet |= WifiManager.WIFI_FEATURE_WPA_PERSONAL;
+        }
+        if (mWifiGlobals.isD2dSupportedWhenInfraStaDisabled()) {
+            additionalFeatureSet |= WifiManager.WIFI_FEATURE_D2D_WHEN_INFRA_STA_DISABLED;
         }
         mSupportedFeatureSet.set(
                 (supportedFeatureSet | concurrencyFeatureSet | additionalFeatureSet)
