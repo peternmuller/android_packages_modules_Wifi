@@ -1192,10 +1192,7 @@ public class WifiServiceImpl extends BaseWifiService {
                 && !isGuestUser())
                 || isPrivileged(pid, uid)
                 || mWifiPermissionsUtil.isAdmin(uid, packageName)
-                || mWifiPermissionsUtil.isSystem(packageName, uid)
-                // TODO(b/140540984): Remove this bypass.
-                || (mWifiPermissionsUtil.checkSystemAlertWindowPermission(uid, packageName)
-                && !isGuestUser());
+                || mWifiPermissionsUtil.isSystem(packageName, uid);
     }
 
     private boolean isGuestUser() {
@@ -8511,13 +8508,15 @@ public class WifiServiceImpl extends BaseWifiService {
         }
         mWifiThreadRunner.post(() -> {
             try {
-                if (!mActiveModeWarden.getPrimaryClientModeManager().isConnected()) {
+                String bssid = mActiveModeWarden.getPrimaryClientModeManager().getConnectedBssid();
+                if (!mActiveModeWarden.getPrimaryClientModeManager().isConnected()
+                        || bssid == null) {
                     iTwtCallback.onFailure(TwtSessionCallback.TWT_ERROR_CODE_NOT_AVAILABLE);
                     return;
                 }
                 mTwtManager.setupTwtSession(
                         mActiveModeWarden.getPrimaryClientModeManager().getInterfaceName(),
-                        twtRequest, iTwtCallback, callingUid);
+                        twtRequest, iTwtCallback, callingUid, bssid);
             } catch (RemoteException e) {
                 Log.e(TAG, e.getMessage(), e);
             }
