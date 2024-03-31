@@ -21,6 +21,8 @@ import static android.net.wifi.SoftApConfiguration.SECURITY_TYPE_WPA3_OWE_TRANSI
 import static android.net.wifi.SoftApConfiguration.SECURITY_TYPE_WPA3_SAE;
 import static android.net.wifi.SoftApConfiguration.SECURITY_TYPE_WPA3_SAE_TRANSITION;
 
+import static com.android.server.wifi.WifiSettingsConfigStore.WIFI_STATIC_CHIP_INFO;
+
 import android.annotation.NonNull;
 import android.app.compat.CompatChanges;
 import android.content.Context;
@@ -85,6 +87,8 @@ public class WifiApConfigStore {
     private final WifiConfigManager mWifiConfigManager;
     private final ActiveModeWarden mActiveModeWarden;
     private final WifiNative mWifiNative;
+    private final HalDeviceManager mHalDeviceManager;
+    private final WifiSettingsConfigStore mWifiSettingsConfigStore;
     private boolean mHasNewDataToSerialize = false;
     private boolean mForceApChannel = false;
     private int mForcedApBand;
@@ -145,6 +149,24 @@ public class WifiApConfigStore {
         mMacAddressUtil = wifiInjector.getMacAddressUtil();
         mIsAutoAppendLowerBandEnabled = mContext.getResources().getBoolean(
                 R.bool.config_wifiSoftapAutoAppendLowerBandsToBandConfigurationEnabled);
+        mHalDeviceManager = wifiInjector.getHalDeviceManager();
+        mWifiSettingsConfigStore = wifiInjector.getSettingsConfigStore();
+        mWifiSettingsConfigStore.registerChangeListener(WIFI_STATIC_CHIP_INFO,
+                (key, value) -> {
+                    if (mPersistentWifiApConfig != null) {
+                        Log.i(TAG, "Chip capability is updated, reset unsupported config");
+                        SoftApConfiguration.Builder configBuilder =
+                                new SoftApConfiguration.Builder(mPersistentWifiApConfig);
+                        if (SdkLevel.isAtLeastS()
+                                && mPersistentWifiApConfig.getBands().length > 1) {
+                            // Current band setting is dual band, check if device supports it.
+                            if (!ApConfigUtil.isBridgedModeSupported(mContext, mWifiNative)) {
+                                configBuilder.setBand(generateDefaultBand(mContext));
+                                persistConfigAndTriggerBackupManagerProxy(configBuilder.build());
+                            }
+                        }
+                    }
+                }, mHandler);
     }
 
     /**
