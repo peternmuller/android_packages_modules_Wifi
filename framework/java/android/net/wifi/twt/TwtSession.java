@@ -37,7 +37,7 @@ import java.util.function.Consumer;
  */
 @SystemApi
 @FlaggedApi(Flags.FLAG_ANDROID_V_WIFI_API)
-public interface TwtSession extends AutoCloseable {
+public interface TwtSession {
     /**
      * Bundle key to get average number of received packets in each wake duration
      */
@@ -114,4 +114,13 @@ public interface TwtSession extends AutoCloseable {
     @FlaggedApi(Flags.FLAG_ANDROID_V_WIFI_API)
     void getStats(@NonNull @CallbackExecutor Executor executor,
             @NonNull Consumer<Bundle> resultCallback);
+
+    /**
+     * Teardown the session. See {@link TwtSessionCallback#onTeardown(int)}. Also closes this
+     * session, relinquishing any underlying resources.
+     *
+     * @throws SecurityException if the caller does not have permission.
+     */
+    @FlaggedApi(Flags.FLAG_ANDROID_V_WIFI_API)
+    void teardown();
 }

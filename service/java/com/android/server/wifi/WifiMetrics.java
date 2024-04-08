@@ -711,6 +711,7 @@ public class WifiMetrics {
         private boolean mIsEcpsPriorityAccessSupported = false;
         private NetworkDetail.HSRelease mHsRelease = NetworkDetail.HSRelease.Unknown;
         private ApType6GHz mApType6GHz = ApType6GHz.AP_TYPE_6GHZ_UNKNOWN;
+        public @WifiAnnotations.ChannelWidth int mChannelWidth = ScanResult.UNSPECIFIED;
 
         public String toString() {
             StringBuilder sb = new StringBuilder();
@@ -746,6 +747,7 @@ public class WifiMetrics {
                 sb.append(", mApType6Ghz=" + mApType6GHz);
                 sb.append(", mIsEcpsPriorityAccessSupported=" + mIsEcpsPriorityAccessSupported);
                 sb.append(", mHsRelease=" + mHsRelease);
+                sb.append(", mChannelWidth" + mChannelWidth);
             }
             return sb.toString();
         }
@@ -1175,6 +1177,7 @@ public class WifiMetrics {
         private boolean mIsCarrierWifi;
         private boolean mIsOobPseudonymEnabled;
         private int mRole;
+        private int mUid;
         private int mCarrierId;
         private int mEapType;
         private int mPhase2Method;
@@ -1428,6 +1431,7 @@ public class WifiMetrics {
                         + mConnectionEvent.isFirstConnectionAfterBoot);
                 sb.append(", isCarrierWifi=" + mIsCarrierWifi);
                 sb.append(", isOobPseudonymEnabled=" + mIsOobPseudonymEnabled);
+                sb.append(", uid=" + mUid);
                 return sb.toString();
             }
         }
@@ -1922,7 +1926,7 @@ public class WifiMetrics {
      */
     public int startConnectionEvent(
             String ifaceName, WifiConfiguration config, String targetBSSID, int roamType,
-            boolean isOobPseudonymEnabled, int role) {
+            boolean isOobPseudonymEnabled, int role, int uid) {
         synchronized (mLock) {
             int overlapWithLastConnectionMs = 0;
             ConnectionEvent currentConnectionEvent = mCurrentConnectionEventPerIface.get(ifaceName);
@@ -1974,6 +1978,7 @@ public class WifiMetrics {
             currentConnectionEvent.mConnectionEvent.isFirstConnectionAfterBoot =
                     mFirstConnectionAfterBoot;
             currentConnectionEvent.mRole = role;
+            currentConnectionEvent.mUid = uid;
             mFirstConnectionAfterBoot = false;
             mConnectionEventList.add(currentConnectionEvent);
             mScanResultRssiTimestampMillis = -1;
@@ -2126,6 +2131,20 @@ public class WifiMetrics {
     }
 
     /**
+     * Set channel width of the current connection.
+     */
+    public void setConnectionChannelWidth(String interfaceName,
+            @WifiAnnotations.ChannelWidth int channelWidth) {
+        synchronized (mLock) {
+            ConnectionEvent currentConnectionEvent = mCurrentConnectionEventPerIface.get(
+                    interfaceName);
+            if (currentConnectionEvent != null) {
+                currentConnectionEvent.mRouterFingerPrint.mChannelWidth = channelWidth;
+            }
+        }
+    }
+
+    /**
      * Set the max link speed supported by current network
      */
     public void setConnectionMaxSupportedLinkSpeedMbps(
@@ -2247,7 +2266,8 @@ public class WifiMetrics {
                         toMetricPhase2Method(currentConnectionEvent.mPhase2Method),
                         currentConnectionEvent.mPasspointRoamingType,
                         currentConnectionEvent.mCarrierId,
-                        currentConnectionEvent.mTofuConnectionState);
+                        currentConnectionEvent.mTofuConnectionState,
+                        currentConnectionEvent.mUid);
 
                 if (connectionSucceeded) {
                     reportRouterCapabilities(currentConnectionEvent.mRouterFingerPrint);
@@ -2642,6 +2662,25 @@ public class WifiMetrics {
                 == WifiStatsLog.WIFI_CONNECTION_RESULT_REPORTED__PASSPOINT_ROAMING_TYPE__ROAMING_RCOI_OPENROAMING_SETTLED;
     }
 
+    private int convertChannelWidthToProto(@WifiAnnotations.ChannelWidth int channelWidth) {
+        switch(channelWidth) {
+            case ScanResult.CHANNEL_WIDTH_20MHZ:
+                return WifiStatsLog.WIFI_AP_CAPABILITIES_REPORTED__CHANNEL_WIDTH_MHZ__CHANNEL_WIDTH_20MHZ;
+            case ScanResult.CHANNEL_WIDTH_40MHZ:
+                return WifiStatsLog.WIFI_AP_CAPABILITIES_REPORTED__CHANNEL_WIDTH_MHZ__CHANNEL_WIDTH_40MHZ;
+            case ScanResult.CHANNEL_WIDTH_80MHZ:
+                return WifiStatsLog.WIFI_AP_CAPABILITIES_REPORTED__CHANNEL_WIDTH_MHZ__CHANNEL_WIDTH_80MHZ;
+            case ScanResult.CHANNEL_WIDTH_160MHZ:
+                return WifiStatsLog.WIFI_AP_CAPABILITIES_REPORTED__CHANNEL_WIDTH_MHZ__CHANNEL_WIDTH_160MHZ;
+            case ScanResult.CHANNEL_WIDTH_80MHZ_PLUS_MHZ:
+                return WifiStatsLog.WIFI_AP_CAPABILITIES_REPORTED__CHANNEL_WIDTH_MHZ__CHANNEL_WIDTH_80MHZ_PLUS_MHZ;
+            case ScanResult.CHANNEL_WIDTH_320MHZ:
+                return WifiStatsLog.WIFI_AP_CAPABILITIES_REPORTED__CHANNEL_WIDTH_MHZ__CHANNEL_WIDTH_320MHZ;
+            default:
+                return WifiStatsLog.WIFI_AP_CAPABILITIES_REPORTED__CHANNEL_WIDTH_MHZ__CHANNEL_WIDTH_UNKNOWN;
+        }
+    }
+
     private void reportRouterCapabilities(RouterFingerPrint r) {
         WifiStatsLog.write(WifiStatsLog.WIFI_AP_CAPABILITIES_REPORTED,
                 r.mIsFrameworkInitiatedRoaming, r.mRouterFingerPrintProto.channelInfo,
@@ -2657,7 +2696,8 @@ public class WifiMetrics {
                 r.mIsBroadcastTwtSupported, r.mIsRestrictedTwtSupported, r.mIs11McSupported,
                 r.mIs11AzSupported, convertHsReleasetoProto(r.mHsRelease),
                 r.mRouterFingerPrintProto.isPasspointHomeProvider,
-                convertApType6GhzToProto(r.mApType6GHz), r.mIsEcpsPriorityAccessSupported);
+                convertApType6GhzToProto(r.mApType6GHz), r.mIsEcpsPriorityAccessSupported,
+                convertChannelWidthToProto(r.mChannelWidth));
     }
 
     /**
@@ -2850,7 +2890,7 @@ public class WifiMetrics {
         currentConnectionEvent.mRouterFingerPrint.mIsTwtRequired = networkDetail.isTwtRequired();
         currentConnectionEvent.mRouterFingerPrint.mIsFilsSupported = networkDetail.isFilsCapable();
         currentConnectionEvent.mRouterFingerPrint.mIs11AzSupported =
-                networkDetail.is11azSupported();
+                networkDetail.is80211azNtbResponder() || networkDetail.is80211azTbResponder();
         currentConnectionEvent.mRouterFingerPrint.mIs11McSupported =
                 networkDetail.is80211McResponderSupport();
         currentConnectionEvent.mRouterFingerPrint.mIsMboSupported = networkDetail.isMboSupported();
@@ -7761,7 +7801,7 @@ public class WifiMetrics {
     /**
      * Add a new listener for Wi-Fi usability stats handling.
      */
-    public void addOnWifiUsabilityListener(IOnWifiUsabilityStatsListener listener) {
+    public void addOnWifiUsabilityListener(@NonNull IOnWifiUsabilityStatsListener listener) {
         if (!mOnWifiUsabilityListeners.register(listener)) {
             Log.e(TAG, "Failed to add listener");
             return;
@@ -7775,7 +7815,7 @@ public class WifiMetrics {
     /**
      * Remove an existing listener for Wi-Fi usability stats handling.
      */
-    public void removeOnWifiUsabilityListener(IOnWifiUsabilityStatsListener listener) {
+    public void removeOnWifiUsabilityListener(@NonNull IOnWifiUsabilityStatsListener listener) {
         mOnWifiUsabilityListeners.unregister(listener);
         if (DBG) {
             Log.v(TAG, "Removing listener. Num listeners: "

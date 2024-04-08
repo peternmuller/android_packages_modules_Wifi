@@ -1269,6 +1269,74 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
     }
 
     /**
+     * Tests that association rejection due to timeout doesn't broadcast authentication failure
+     * with reason code ERROR_AUTH_FAILURE_WRONG_PSWD.
+     * Driver/Supplicant sets the timedOut field when there is no ACK or response frame for
+     * Authentication request or Association request frame.
+     */
+    @Test
+    public void testAssociationRejectionDueToTimedOutDoesntNotifyWrongPassword() throws Exception {
+        executeAndValidateInitializationSequence();
+        assertNotNull(mISupplicantStaIfaceCallback);
+
+        executeAndValidateConnectSequenceWithKeyMgmt(
+                SUPPLICANT_NETWORK_ID, false, TRANSLATED_SUPPLICANT_SSID.toString(),
+                WifiConfiguration.SECURITY_TYPE_SAE, null, true);
+        mISupplicantStaIfaceCallback.onStateChanged(
+                StaIfaceCallbackState.ASSOCIATING,
+                NativeUtil.macAddressToByteArray(BSSID),
+                SUPPLICANT_NETWORK_ID,
+                NativeUtil.byteArrayFromArrayList(NativeUtil.decodeSsid(SUPPLICANT_SSID)), false);
+        AssociationRejectionData rejectionData = createAssocRejectData(SUPPLICANT_SSID, BSSID,
+                StaIfaceStatusCode.UNSPECIFIED_FAILURE, true);
+        mISupplicantStaIfaceCallback.onAssociationRejected(rejectionData);
+        verify(mWifiMonitor, never()).broadcastAuthenticationFailureEvent(eq(WLAN0_IFACE_NAME),
+                anyInt(), anyInt(), any(), any());
+        ArgumentCaptor<AssocRejectEventInfo> assocRejectEventInfoCaptor =
+                ArgumentCaptor.forClass(AssocRejectEventInfo.class);
+        verify(mWifiMonitor).broadcastAssociationRejectionEvent(
+                eq(WLAN0_IFACE_NAME), assocRejectEventInfoCaptor.capture());
+        AssocRejectEventInfo assocRejectEventInfo = assocRejectEventInfoCaptor.getValue();
+        assertNotNull(assocRejectEventInfo);
+        assertTrue(assocRejectEventInfo.timedOut);
+    }
+
+    /**
+     * Tests the handling of authentication failure for WPA3-Personal networks with
+     * status code = 15 (CHALLENGE_FAIL)
+     */
+    @Test
+    public void testWpa3AuthRejectionDueToChallengeFail() throws Exception {
+        executeAndValidateInitializationSequence();
+        assertNotNull(mISupplicantStaIfaceCallback);
+
+        executeAndValidateConnectSequenceWithKeyMgmt(
+                SUPPLICANT_NETWORK_ID, false, TRANSLATED_SUPPLICANT_SSID.toString(),
+                WifiConfiguration.SECURITY_TYPE_SAE, null, true);
+        mISupplicantStaIfaceCallback.onStateChanged(
+                StaIfaceCallbackState.ASSOCIATING,
+                NativeUtil.macAddressToByteArray(BSSID),
+                SUPPLICANT_NETWORK_ID,
+                NativeUtil.byteArrayFromArrayList(NativeUtil.decodeSsid(SUPPLICANT_SSID)), false);
+        int statusCode = StaIfaceStatusCode.CHALLENGE_FAIL;
+        AssociationRejectionData rejectionData = createAssocRejectData(SUPPLICANT_SSID, BSSID,
+                statusCode, false);
+        mISupplicantStaIfaceCallback.onAssociationRejected(rejectionData);
+        verify(mWifiMonitor).broadcastAuthenticationFailureEvent(eq(WLAN0_IFACE_NAME),
+                eq(WifiManager.ERROR_AUTH_FAILURE_WRONG_PSWD), eq(-1),
+                eq(TRANSLATED_SUPPLICANT_SSID.toString()),
+                eq(MacAddress.fromString(BSSID)));
+        ArgumentCaptor<AssocRejectEventInfo> assocRejectEventInfoCaptor =
+                ArgumentCaptor.forClass(AssocRejectEventInfo.class);
+        verify(mWifiMonitor).broadcastAssociationRejectionEvent(
+                eq(WLAN0_IFACE_NAME), assocRejectEventInfoCaptor.capture());
+        AssocRejectEventInfo assocRejectEventInfo = assocRejectEventInfoCaptor.getValue();
+        assertNotNull(assocRejectEventInfo);
+        assertEquals(SupplicantStaIfaceCallbackAidlImpl.halToFrameworkStatusCode(
+                statusCode), assocRejectEventInfo.statusCode);
+    }
+
+    /**
      * Tests the handling of incorrect network passwords for WEP networks.
      */
     @Test
@@ -3284,5 +3352,39 @@ public class SupplicantStaIfaceHalAidlImplTest extends WifiBaseTest {
         assertEquals((byte) userPriorityLimit, halParams.upLimit);
         assertEquals(streamTimeoutUs, halParams.streamTimeoutUs);
         assertEquals(halFrameClassifierMask, halParams.frameClassifierMask);
+    }
+
+    /**
+     * Test that MSCS params set through {@link SupplicantStaIfaceHalAidlImpl#enableMscs(
+     * MscsParams, String)} are cached for later resends.
+     */
+    @Test
+    public void testEnableAndResendMscs() throws Exception {
+        executeAndValidateInitializationSequence();
+        mDut.setupIface(WLAN0_IFACE_NAME);
+
+        doNothing().when(mISupplicantStaIfaceMock).configureMscs(any());
+        MscsParams defaultParams = new MscsParams.Builder().build();
+
+        ArgumentCaptor<android.hardware.wifi.supplicant.MscsParams> halParamsCaptor =
+                ArgumentCaptor.forClass(android.hardware.wifi.supplicant.MscsParams.class);
+        mDut.enableMscs(defaultParams, WLAN0_IFACE_NAME);
+        verify(mISupplicantStaIfaceMock).configureMscs(halParamsCaptor.capture());
+        android.hardware.wifi.supplicant.MscsParams initialParams = halParamsCaptor.getValue();
+
+        // Resend should use the params cached during the initial send.
+        mDut.resendMscs(WLAN0_IFACE_NAME);
+        verify(mISupplicantStaIfaceMock, times(2)).configureMscs(halParamsCaptor.capture());
+        android.hardware.wifi.supplicant.MscsParams resendParams = halParamsCaptor.getValue();
+
+        assertEquals(initialParams.upBitmap, resendParams.upBitmap);
+        assertEquals(initialParams.upLimit, resendParams.upLimit);
+        assertEquals(initialParams.streamTimeoutUs, resendParams.streamTimeoutUs);
+        assertEquals(initialParams.frameClassifierMask, resendParams.frameClassifierMask);
+
+        // Disabling MSCS should clear the cached params and prevent future resends.
+        mDut.disableMscs(WLAN0_IFACE_NAME);
+        mDut.resendMscs(WLAN0_IFACE_NAME);
+        verify(mISupplicantStaIfaceMock, times(2)).configureMscs(halParamsCaptor.capture());
     }
 }

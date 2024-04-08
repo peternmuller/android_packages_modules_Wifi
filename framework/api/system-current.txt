@@ -515,16 +515,16 @@ package android.net.wifi {
     field @NonNull public static final android.os.Parcelable.Creator<android.net.wifi.SoftApState> CREATOR;
   }
 
-  @FlaggedApi("com.android.wifi.flags.uri_parser") public final class UriParserResults implements android.os.Parcelable {
-    method @FlaggedApi("com.android.wifi.flags.uri_parser") public int describeContents();
-    method @FlaggedApi("com.android.wifi.flags.uri_parser") @Nullable public String getInformation();
-    method @FlaggedApi("com.android.wifi.flags.uri_parser") @Nullable public String getPublicKey();
-    method @FlaggedApi("com.android.wifi.flags.uri_parser") public int getUriScheme();
-    method @FlaggedApi("com.android.wifi.flags.uri_parser") @Nullable public android.net.wifi.WifiConfiguration getWifiConfiguration();
-    method @FlaggedApi("com.android.wifi.flags.uri_parser") public void writeToParcel(@NonNull android.os.Parcel, int);
-    field @FlaggedApi("com.android.wifi.flags.uri_parser") @NonNull public static final android.os.Parcelable.Creator<android.net.wifi.UriParserResults> CREATOR;
-    field @FlaggedApi("com.android.wifi.flags.uri_parser") public static final int URI_SCHEME_DPP = 2; // 0x2
-    field @FlaggedApi("com.android.wifi.flags.uri_parser") public static final int URI_SCHEME_ZXING_WIFI_NETWORK_CONFIG = 1; // 0x1
+  @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") public final class UriParserResults implements android.os.Parcelable {
+    method @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") public int describeContents();
+    method @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") @Nullable public String getInformation();
+    method @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") @Nullable public String getPublicKey();
+    method @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") public int getUriScheme();
+    method @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") @Nullable public android.net.wifi.WifiConfiguration getWifiConfiguration();
+    method @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") public void writeToParcel(@NonNull android.os.Parcel, int);
+    field @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") @NonNull public static final android.os.Parcelable.Creator<android.net.wifi.UriParserResults> CREATOR;
+    field @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") public static final int URI_SCHEME_DPP = 2; // 0x2
+    field @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") public static final int URI_SCHEME_ZXING_WIFI_NETWORK_CONFIG = 1; // 0x1
   }
 
   public final class WifiClient implements android.os.Parcelable {
@@ -1743,11 +1743,12 @@ package android.net.wifi.twt {
     method @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") @NonNull public android.net.wifi.twt.TwtRequest.Builder setLinkId(@IntRange(from=0x0, to=0xf) int);
   }
 
-  @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") public interface TwtSession extends java.lang.AutoCloseable {
+  @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") public interface TwtSession {
     method @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") public int getMloLinkId();
     method @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") public void getStats(@NonNull java.util.concurrent.Executor, @NonNull java.util.function.Consumer<android.os.Bundle>);
     method @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") public int getWakeDurationMicros();
     method @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") public long getWakeIntervalMicros();
+    method @FlaggedApi("com.android.wifi.flags.android_v_wifi_api") public void teardown();
     field public static final String TWT_STATS_KEY_INT_AVERAGE_EOSP_DURATION_MICROS = "key_avg_eosp_dur";
     field public static final String TWT_STATS_KEY_INT_AVERAGE_RX_PACKET_COUNT = "key_avg_rx_pkt_count";
     field public static final String TWT_STATS_KEY_INT_AVERAGE_RX_PACKET_SIZE = "key_avg_rx_pkt_size";

@@ -3447,6 +3447,8 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
                 mLastConnectionCapabilities.apTidToLinkMapNegotiationSupported);
         mWifiMetrics.setConnectionMaxSupportedLinkSpeedMbps(mInterfaceName,
                 maxTxLinkSpeedMbps, maxRxLinkSpeedMbps);
+        mWifiMetrics.setConnectionChannelWidth(mInterfaceName,
+                mLastConnectionCapabilities.channelBandwidth);
         if (mLastConnectionCapabilities.wifiStandard == ScanResult.WIFI_STANDARD_11BE) {
             updateMloLinkAddrAndStates(mWifiNative.getConnectionMloLinksInfo(mInterfaceName));
             updateBlockListAffiliatedBssids();
@@ -3758,7 +3760,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
      * Inform other components that a new connection attempt is starting.
      */
     private void reportConnectionAttemptStart(
-            WifiConfiguration config, String targetBSSID, int roamType) {
+            WifiConfiguration config, String targetBSSID, int roamType, int uid) {
         boolean isOobPseudonymEnabled = false;
         if (config.enterpriseConfig != null && config.enterpriseConfig.isAuthenticationSimBased()
                 && mWifiCarrierInfoManager.isOobPseudonymFeatureEnabled(config.carrierId)) {
@@ -3767,7 +3769,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
         int overlapWithLastConnectionMs =
                 mWifiMetrics.startConnectionEvent(
                         mInterfaceName, config, targetBSSID, roamType, isOobPseudonymEnabled,
-                        getClientRoleForMetrics(config));
+                        getClientRoleForMetrics(config), uid);
         if (mDeviceConfigFacade.isOverlappingConnectionBugreportEnabled()
                 && overlapWithLastConnectionMs
                 > mDeviceConfigFacade.getOverlappingConnectionDurationThresholdMs()) {
@@ -4816,7 +4818,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
 
                     updateWifiConfigOnStartConnection(config, bssid);
                     reportConnectionAttemptStart(config, mTargetBssid,
-                            WifiMetricsProto.ConnectionEvent.ROAM_UNRELATED);
+                            WifiMetricsProto.ConnectionEvent.ROAM_UNRELATED, uid);
 
                     String currentMacAddress = mWifiNative.getMacAddress(mInterfaceName);
                     mWifiInfo.setMacAddress(currentMacAddress);
@@ -5386,7 +5388,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
     public boolean isAffiliatedLinkBssid(@NonNull MacAddress bssid) {
         List<MloLink> links = mWifiInfo.getAffiliatedMloLinks();
         for (MloLink link: links) {
-            if (link.getApMacAddress().equals(bssid)) {
+            if (bssid.equals(link.getApMacAddress())) {
                 return true;
             }
         }
@@ -5852,6 +5854,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
                         mApplicationQosPolicyRequestHandler.queueAllPoliciesOnIface(
                                 mInterfaceName, mostRecentConnectionSupports11ax());
                     }
+                    mWifiNative.resendMscs(mInterfaceName);
                     updateLayer2Information();
                     updateCurrentConnectionInfo();
                     transitionTo(mL3ProvisioningState);
@@ -7583,7 +7586,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
                             + " targetRoamBSSID " + mTargetBssid);
 
                     reportConnectionAttemptStart(config, mTargetBssid,
-                            WifiMetricsProto.ConnectionEvent.ROAM_ENTERPRISE);
+                            WifiMetricsProto.ConnectionEvent.ROAM_ENTERPRISE, Process.WIFI_UID);
                     if (mWifiNative.roamToNetwork(mInterfaceName, config)) {
                         mTargetWifiConfiguration = config;
                         mIsAutoRoaming = true;

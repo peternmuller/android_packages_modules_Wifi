@@ -151,6 +151,7 @@ import android.net.Uri;
 import android.net.wifi.CoexUnsafeChannel;
 import android.net.wifi.IActionListener;
 import android.net.wifi.IBooleanListener;
+import android.net.wifi.IByteArrayListener;
 import android.net.wifi.ICoexCallback;
 import android.net.wifi.IDppCallback;
 import android.net.wifi.IIntegerListener;
@@ -385,6 +386,10 @@ public class WifiServiceImplTest extends WifiBaseTest {
     final ArgumentCaptor<SoftApModeConfiguration> mSoftApModeConfigCaptor =
             ArgumentCaptor.forClass(SoftApModeConfiguration.class);
 
+    final ArgumentCaptor<WifiSettingsConfigStore.OnSettingsChangedListener>
+            mWepAllowedSettingChangedListenerCaptor =
+            ArgumentCaptor.forClass(WifiSettingsConfigStore.OnSettingsChangedListener.class);
+
     @Mock Bundle mBundle;
     @Mock WifiContext mContext;
     @Mock Context mContextAsUser;
@@ -493,6 +498,8 @@ public class WifiServiceImplTest extends WifiBaseTest {
     @Mock WifiDeviceStateChangeManager mWifiDeviceStateChangeManager;
     @Mock PasspointNetworkNominateHelper mPasspointNetworkNominateHelper;
     @Mock WifiRoamingModeManager mWifiRoamingModeManager;
+    @Mock BackupRestoreController mBackupRestoreController;
+    @Mock WifiSettingsBackupRestore mWifiSettingsBackupRestore;
     @Captor ArgumentCaptor<Intent> mIntentCaptor;
     @Captor ArgumentCaptor<List> mListCaptor;
     @Mock TwtManager mTwtManager;
@@ -551,6 +558,8 @@ public class WifiServiceImplTest extends WifiBaseTest {
                 .thenReturn(mock(HandlerThread.class));
         when(mWifiInjector.getWifiDeviceStateChangeManager())
                 .thenReturn(mWifiDeviceStateChangeManager);
+        when(mWifiInjector.getWifiSettingsBackupRestore()).thenReturn(mWifiSettingsBackupRestore);
+        when(mWifiInjector.getBackupRestoreController()).thenReturn(mBackupRestoreController);
         when(mHandlerThread.getThreadHandler()).thenReturn(new Handler(mLooper.getLooper()));
         when(mHandlerThread.getLooper()).thenReturn(mLooper.getLooper());
         when(mContext.getResources()).thenReturn(mResources);
@@ -6828,38 +6837,6 @@ public class WifiServiceImplTest extends WifiBaseTest {
     }
 
     /**
-     * Verify that add or update networks is allowed for apps holding system alert permission.
-     */
-    @Test
-    public void testAddOrUpdateNetworkIsAllowedForAppsWithSystemAlertPermission() throws Exception {
-        doReturn(AppOpsManager.MODE_ALLOWED).when(mAppOpsManager)
-                .noteOp(AppOpsManager.OPSTR_CHANGE_WIFI_STATE, Process.myUid(), TEST_PACKAGE_NAME);
-        when(mWifiConfigManager.addOrUpdateNetwork(any(),  anyInt(), any(), eq(false))).thenReturn(
-                new NetworkUpdateResult(0));
-
-        // Verify caller fails to add network as Guest user.
-        when(mWifiPermissionsUtil.checkSystemAlertWindowPermission(
-                Process.myUid(), TEST_PACKAGE_NAME)).thenReturn(true);
-        when(mWifiPermissionsUtil.isGuestUser()).thenReturn(true);
-        WifiConfiguration config = WifiConfigurationTestUtil.createOpenNetwork();
-        mLooper.startAutoDispatch();
-        assertEquals(-1,
-                mWifiServiceImpl.addOrUpdateNetwork(config, TEST_PACKAGE_NAME, mAttribution));
-
-        // Verify caller successfully add network when not a Guest user.
-        when(mWifiPermissionsUtil.isGuestUser()).thenReturn(false);
-        assertEquals(0,
-                mWifiServiceImpl.addOrUpdateNetwork(config, TEST_PACKAGE_NAME, mAttribution));
-        mLooper.stopAutoDispatchAndIgnoreExceptions();
-
-        verifyCheckChangePermission(TEST_PACKAGE_NAME);
-        verify(mWifiPermissionsUtil, times(2))
-                .checkSystemAlertWindowPermission(anyInt(), anyString());
-        verify(mWifiConfigManager).addOrUpdateNetwork(any(),  anyInt(), any(), eq(false));
-        verify(mWifiMetrics).incrementNumAddOrUpdateNetworkCalls();
-    }
-
-    /**
      * Verify that add or update networks is allowed for DeviceOwner app.
      */
     @Test
@@ -12409,10 +12386,10 @@ public class WifiServiceImplTest extends WifiBaseTest {
         ArgumentCaptor<Map<String, Integer>> resultCaptor = ArgumentCaptor.forClass(Map.class);
         inOrder.verify(listener).onResult(resultCaptor.capture());
 
-        assertTrue(resultCaptor.getValue().get(TEST_SSID_WITH_QUOTES)
-                == deviceAdminRoamingPolicies.get(TEST_SSID_WITH_QUOTES));
-        assertTrue(resultCaptor.getValue().size()
-                == deviceAdminRoamingPolicies.size());
+        assertEquals(resultCaptor.getValue().get(TEST_SSID_WITH_QUOTES),
+                deviceAdminRoamingPolicies.get(TEST_SSID_WITH_QUOTES));
+        assertEquals(resultCaptor.getValue().size(),
+                deviceAdminRoamingPolicies.size());
     }
 
     @Test
@@ -12437,10 +12414,10 @@ public class WifiServiceImplTest extends WifiBaseTest {
         ArgumentCaptor<Map<String, Integer>> resultCaptor = ArgumentCaptor.forClass(Map.class);
         inOrder.verify(listener).onResult(resultCaptor.capture());
 
-        assertTrue(resultCaptor.getValue().get(TEST_SSID_WITH_QUOTES)
-                == nonAdminRoamingPolicies.get(TEST_SSID_WITH_QUOTES));
-        assertTrue(resultCaptor.getValue().size()
-                == nonAdminRoamingPolicies.size());
+        assertEquals(resultCaptor.getValue().get(TEST_SSID_WITH_QUOTES),
+                nonAdminRoamingPolicies.get(TEST_SSID_WITH_QUOTES));
+        assertEquals(resultCaptor.getValue().size(),
+                nonAdminRoamingPolicies.size());
     }
 
     private void verifyIsPnoSupported(boolean isBackgroundScanSupported, boolean isSwPnoEnabled,
@@ -12569,10 +12546,11 @@ public class WifiServiceImplTest extends WifiBaseTest {
         verify(iTwtCallback).onFailure(eq(TwtSessionCallback.TWT_ERROR_CODE_NOT_AVAILABLE));
         // Test setupTwtSession with station connected
         when(mClientModeManager.isConnected()).thenReturn(true);
+        when(mClientModeManager.getConnectedBssid()).thenReturn(TEST_BSSID);
         mWifiServiceImpl.setupTwtSession(twtRequest, iTwtCallback, mExtras);
         mLooper.dispatchAll();
         verify(mTwtManager).setupTwtSession(eq(WIFI_IFACE_NAME), eq(twtRequest), eq(iTwtCallback),
-                eq(Binder.getCallingUid()));
+                eq(Binder.getCallingUid()), eq(TEST_BSSID));
     }
 
     @Test
@@ -12620,5 +12598,77 @@ public class WifiServiceImplTest extends WifiBaseTest {
         mWifiServiceImpl.teardownTwtSession(sessionId, mExtras);
         mLooper.dispatchAll();
         verify(mTwtManager).tearDownTwtSession(eq(WIFI_IFACE_NAME), eq(sessionId));
+    }
+
+    @SuppressWarnings("BoxedPrimitiveEquality")
+    @Test
+    public void testRetrieveWifiBackupData() throws Exception {
+        assumeTrue(SdkLevel.isAtLeastV());
+        // Expect exception when caller has no permission
+        doThrow(new SecurityException()).when(mContext)
+                .enforceCallingOrSelfPermission(eq(android.Manifest.permission.NETWORK_SETTINGS),
+                        eq("WifiService"));
+        IByteArrayListener mockTestListener = mock(IByteArrayListener.class);
+        // by default no permissions are given so the call should fail.
+        assertThrows(SecurityException.class,
+                () -> mWifiServiceImpl.retrieveWifiBackupData(mockTestListener));
+        doNothing().when(mContext)
+                .enforceCallingOrSelfPermission(eq(android.Manifest.permission.NETWORK_SETTINGS),
+                        eq("WifiService"));
+        // null listener ==> IllegalArgumentException
+        assertThrows(IllegalArgumentException.class,
+                () -> mWifiServiceImpl.retrieveWifiBackupData(null));
+        mWifiServiceImpl.retrieveWifiBackupData(mockTestListener);
+        mLooper.dispatchAll();
+        verify(mBackupRestoreController).retrieveBackupData();
+        verify(mockTestListener).onResult(any());
+    }
+
+    @SuppressWarnings("BoxedPrimitiveEquality")
+    @Test
+    public void testRestoreWifiBackupData() throws Exception {
+        assumeTrue(SdkLevel.isAtLeastV());
+        byte[] mockTestRestoredData = new byte[0];
+        // Expect exception when caller has no permission
+        doThrow(new SecurityException()).when(mContext)
+                .enforceCallingOrSelfPermission(eq(android.Manifest.permission.NETWORK_SETTINGS),
+                        eq("WifiService"));
+        // by default no permissions are given so the call should fail.
+        assertThrows(SecurityException.class,
+                () -> mWifiServiceImpl.restoreWifiBackupData(mockTestRestoredData));
+        doNothing().when(mContext)
+                .enforceCallingOrSelfPermission(eq(android.Manifest.permission.NETWORK_SETTINGS),
+                        eq("WifiService"));
+        mWifiServiceImpl.restoreWifiBackupData(mockTestRestoredData);
+        mLooper.dispatchAll();
+        verify(mBackupRestoreController).parserBackupDataAndDispatch(mockTestRestoredData);
+    }
+
+    @Test
+    public void testWepAllowedChangedFromCloudRestoration() {
+        when(mWifiSettingsConfigStore.get(eq(WIFI_WEP_ALLOWED))).thenReturn(true);
+        when(mWifiGlobals.isWepAllowed()).thenReturn(true);
+        mWifiServiceImpl.checkAndStartWifi();
+        mLooper.dispatchAll();
+        verify(mWifiSettingsConfigStore).registerChangeListener(
+                eq(WIFI_WEP_ALLOWED),
+                mWepAllowedSettingChangedListenerCaptor.capture(),
+                any(Handler.class));
+        verify(mWifiGlobals).setWepAllowed(true);
+        // Mock wep connection to make sure it will disconnect
+        ConcreteClientModeManager cmmWep = mock(ConcreteClientModeManager.class);
+        WifiInfo mockWifiInfoWep = mock(WifiInfo.class);
+        List<ClientModeManager> cmms = Arrays.asList(cmmWep);
+        when(mActiveModeWarden.getClientModeManagers()).thenReturn(cmms);
+        when(mockWifiInfoWep.getCurrentSecurityType()).thenReturn(WifiInfo.SECURITY_TYPE_WEP);
+        when(cmmWep.getConnectionInfo()).thenReturn(mockWifiInfoWep);
+
+        // Test wep is changed from cloud restoration.
+        mWepAllowedSettingChangedListenerCaptor.getValue()
+                .onSettingsChanged(WIFI_WEP_ALLOWED, false);
+        mLooper.dispatchAll();
+        verify(mWifiGlobals).setWepAllowed(false);
+        // Only WEP disconnect
+        verify(cmmWep).disconnect();
     }
 }

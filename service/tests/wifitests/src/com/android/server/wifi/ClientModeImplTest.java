@@ -1741,7 +1741,7 @@ public class ClientModeImplTest extends WifiBaseTest {
         verify(mSimRequiredNotifier).showSimRequiredNotification(any(), any());
         verify(mWifiNative, times(2)).removeAllNetworks(WIFI_IFACE_NAME);
         verify(mWifiMetrics).startConnectionEvent(
-                anyString(), any(), anyString(), anyInt(), eq(true), anyInt());
+                anyString(), any(), anyString(), anyInt(), eq(true), anyInt(), anyInt());
     }
 
     /**
@@ -2968,7 +2968,7 @@ public class ClientModeImplTest extends WifiBaseTest {
     @Test
     public void testEapSimErrorVendorSpecific() throws Exception {
         when(mWifiMetrics.startConnectionEvent(any(), any(), anyString(), anyInt(), anyBoolean(),
-                anyInt())).thenReturn(80000);
+                anyInt(), anyInt())).thenReturn(80000);
         initializeAndAddNetworkAndVerifySuccess();
 
         startConnectSuccess();
@@ -2999,7 +2999,7 @@ public class ClientModeImplTest extends WifiBaseTest {
     @Test
     public void testEapAkaRetrieveOobPseudonymTriggeredByAuthenticationFailure() throws Exception {
         when(mWifiMetrics.startConnectionEvent(any(), any(), anyString(), anyInt(), anyBoolean(),
-                anyInt())).thenReturn(80000);
+                anyInt(), anyInt())).thenReturn(80000);
         when(mWifiCarrierInfoManager.isOobPseudonymFeatureEnabled(anyInt())).thenReturn(true);
         initializeAndAddNetworkAndVerifySuccess();
 
@@ -10084,6 +10084,33 @@ public class ClientModeImplTest extends WifiBaseTest {
         assertTrue(mCmi.isAffiliatedLinkBssid(MacAddress.fromString(TEST_BSSID_STR)));
         assertTrue(mCmi.isAffiliatedLinkBssid(MacAddress.fromString(TEST_BSSID_STR1)));
         assertFalse(mCmi.isAffiliatedLinkBssid(MacAddress.fromString(TEST_BSSID_STR2)));
+    }
+
+    @Test
+    public  void testAffiliatedLinkBssidMatchWithNullLinkMacAddress() throws Exception {
+        setConnection();
+        List<MloLink> mloLinks = new ArrayList<>();
+        // Build MLO link with null link mac address
+        MloLink link1 = new MloLink();
+        link1.setBand(WifiScanner.WIFI_BAND_24_GHZ);
+        link1.setChannel(TEST_CHANNEL);
+        link1.setLinkId(TEST_MLO_LINK_ID);
+        link1.setRssi(TEST_RSSI);
+        mloLinks.add(link1);
+        when(mScanResult.getApMldMacAddress()).thenReturn(TEST_AP_MLD_MAC_ADDRESS);
+        when(mScanResult.getApMloLinkId()).thenReturn(TEST_MLO_LINK_ID);
+        when(mScanResult.getAffiliatedMloLinks()).thenReturn(mloLinks);
+        mScanResult.level = TEST_RSSI;
+        when(mWifiConfigManager.getScanDetailCacheForNetwork(FRAMEWORK_NETWORK_ID))
+                .thenReturn(mScanDetailCache);
+        when(mScanDetailCache.getScanResult(any())).thenReturn(mScanResult);
+        // Associate
+        mCmi.sendMessage(WifiMonitor.SUPPLICANT_STATE_CHANGE_EVENT, 0, 0,
+                new StateChangeResult(FRAMEWORK_NETWORK_ID, TEST_WIFI_SSID, TEST_BSSID_STR, sFreq,
+                        SupplicantState.ASSOCIATED));
+        mLooper.dispatchAll();
+        // Test isAffiliatedLinkBssid match fails with no NPE
+        assertFalse(mCmi.isAffiliatedLinkBssid(MacAddress.fromString(TEST_BSSID_STR)));
     }
 
     /**
