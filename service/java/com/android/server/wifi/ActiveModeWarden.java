@@ -219,9 +219,9 @@ public class ActiveModeWarden {
     }
 
     /**
-     * Get the request WorkSource for secondary LOCAL-ONLY CMM
+     * Get the request WorkSource for secondary CMM
      *
-     * @return the WorkSources of the current secondary LOCAL-ONLY CMMs
+     * @return the WorkSources of the current secondary CMMs
      */
     public Set<WorkSource> getSecondaryRequestWs() {
         synchronized (mServiceApiLock) {
@@ -721,7 +721,9 @@ public class ActiveModeWarden {
                 }
             }, new IntentFilter(TelephonyManager.ACTION_EMERGENCY_CALL_STATE_CHANGED));
         }
-        mWifiGlobals.setD2dStaConcurrencySupported(mWifiNative.isP2pStaConcurrencySupported());
+        mWifiGlobals.setD2dStaConcurrencySupported(
+                mWifiNative.isP2pStaConcurrencySupported()
+                        || mWifiNative.isNanStaConcurrencySupported());
         // Initialize the supported feature set.
         setSupportedFeatureSet(mWifiNative.getSupportedFeatureSet(null),
                 mWifiNative.isStaApConcurrencySupported(),
@@ -1455,7 +1457,7 @@ public class ActiveModeWarden {
         ConcreteClientModeManager manager = mWifiInjector.makeClientModeManager(
                 listener, requestorWs, role, mVerboseLoggingEnabled);
         mClientModeManagers.add(manager);
-        if (ROLE_CLIENT_LOCAL_ONLY.equals(role)) {
+        if (ROLE_CLIENT_SECONDARY_LONG_LIVED.equals(role) || ROLE_CLIENT_LOCAL_ONLY.equals(role)) {
             synchronized (mServiceApiLock) {
                 mRequestWs.add(new WorkSource(requestorWs));
             }
@@ -1476,7 +1478,7 @@ public class ActiveModeWarden {
         synchronized (mServiceApiLock) {
             mRequestWs.remove(manager.getRequestorWs());
         }
-        if (ROLE_CLIENT_LOCAL_ONLY.equals(role)) {
+        if (ROLE_CLIENT_SECONDARY_LONG_LIVED.equals(role) || ROLE_CLIENT_LOCAL_ONLY.equals(role)) {
             synchronized (mServiceApiLock) {
                 mRequestWs.add(new WorkSource(requestorWs));
             }
@@ -1731,7 +1733,8 @@ public class ActiveModeWarden {
 
         private void onStoppedOrStartFailure(ConcreteClientModeManager clientModeManager) {
             mClientModeManagers.remove(clientModeManager);
-            if (ROLE_CLIENT_LOCAL_ONLY.equals(clientModeManager.getPreviousRole())) {
+            if (ROLE_CLIENT_SECONDARY_LONG_LIVED.equals(clientModeManager.getPreviousRole())
+                    || ROLE_CLIENT_LOCAL_ONLY.equals(clientModeManager.getPreviousRole())) {
                 synchronized (mServiceApiLock) {
                     mRequestWs.remove(clientModeManager.getRequestorWs());
                 }
