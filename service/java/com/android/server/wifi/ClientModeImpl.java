@@ -1909,7 +1909,8 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
      */
     public boolean syncQueryPasspointIcon(long bssid, String fileName) {
         return mWifiThreadRunner.call(
-                () -> mPasspointManager.queryPasspointIcon(bssid, fileName), false);
+                () -> mPasspointManager.queryPasspointIcon(bssid, fileName), false,
+                TAG + "#syncQueryPasspointIcon");
     }
 
     @Override
@@ -1961,7 +1962,8 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
             IProvisioningCallback callback) {
         return mWifiThreadRunner.call(
                 () -> mPasspointManager.startSubscriptionProvisioning(
-                        callingUid, provider, callback), false);
+                        callingUid, provider, callback), false,
+                TAG + "#syncStartSubscriptionProvisioning");
     }
 
     /**
