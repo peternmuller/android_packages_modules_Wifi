@@ -711,7 +711,7 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
 
         mP2pSupported = mContext.getPackageManager().hasSystemFeature(
                 PackageManager.FEATURE_WIFI_DIRECT);
-        HandlerThread wifiP2pThread = mWifiInjector.getWifiP2pServiceHandlerThread();
+        HandlerThread wifiP2pThread = mWifiInjector.getWifiHandlerThread();
         mClientHandler = new ClientHandler(TAG, wifiP2pThread.getLooper());
         mWifiNative = mWifiInjector.getWifiP2pNative();
         mLastCallerInfoManager = mWifiInjector.getLastCallerInfoManager();
@@ -1815,14 +1815,15 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
         }
 
         private void reportConnectionEventTakeBugReportIfOverlapped(int connectionType,
-                WifiP2pConfig config, int groupRole, int uid) {
+                WifiP2pConfig config, int groupRole, int uid, String attributionTag) {
             if (mWifiP2pMetrics.hasOngoingConnection()) {
                 takeBugReportP2pFailureIfNeeded("Wi-Fi BugReport (P2P "
                         + mWifiP2pMetrics.getP2pGroupRoleString()
                         + " overlapping connection attempt)",
                         "new and old connection attempts overlap");
             }
-            mWifiP2pMetrics.startConnectionEvent(connectionType, config, groupRole, uid);
+            mWifiP2pMetrics.startConnectionEvent(connectionType, config, groupRole, uid,
+                    attributionTag);
         }
 
         private void takeBugReportP2pFailureIfNeeded(String bugTitle, String bugDetail) {
@@ -3584,13 +3585,14 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                             break;
                         }
                         int uid = message.sendingUid;
+                        String attributionTag = getCallingFeatureId(uid, message.replyTo);
                         Bundle extras = message.getData()
                                 .getBundle(WifiP2pManager.EXTRA_PARAM_KEY_BUNDLE);
                         boolean hasPermission = false;
                         if (isPlatformOrTargetSdkLessThanT(packageName, uid)) {
                             hasPermission = mWifiPermissionsUtil.checkCanAccessWifiDirect(
                                     packageName,
-                                    getCallingFeatureId(message.sendingUid, message.replyTo),
+                                    attributionTag,
                                     uid, false);
                         } else {
                             hasPermission = checkNearbyDevicesPermission(uid, packageName,
@@ -3618,7 +3620,8 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                             if (mWifiNative.p2pGroupAdd(config, true)) {
                                 reportConnectionEventTakeBugReportIfOverlapped(
                                         P2pConnectionEvent.CONNECTION_FAST,
-                                        config, WifiMetricsProto.GroupEvent.GROUP_CLIENT, uid);
+                                        config, WifiMetricsProto.GroupEvent.GROUP_CLIENT, uid,
+                                        attributionTag);
                                 smTransition(this, mGroupNegotiationState);
                             } else {
                                 loge("Cannot join a group with config.");
@@ -3636,12 +3639,12 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                                 if (reinvokePersistentGroup(config, false)) {
                                     mWifiP2pMetrics.startConnectionEvent(
                                             P2pConnectionEvent.CONNECTION_REINVOKE,
-                                            config, GroupEvent.GROUP_UNKNOWN, uid);
+                                            config, GroupEvent.GROUP_UNKNOWN, uid, attributionTag);
                                     smTransition(this, mGroupNegotiationState);
                                 } else {
                                     mWifiP2pMetrics.startConnectionEvent(
                                             P2pConnectionEvent.CONNECTION_FRESH,
-                                            config, GroupEvent.GROUP_UNKNOWN, uid);
+                                            config, GroupEvent.GROUP_UNKNOWN, uid, attributionTag);
                                     smTransition(this, mProvisionDiscoveryState);
                                 }
                             }
@@ -3686,7 +3689,7 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                         mJoinExistingGroup = false;
                         mWifiP2pMetrics.startConnectionEvent(
                                 P2pConnectionEvent.CONNECTION_FRESH,
-                                config, GroupEvent.GROUP_UNKNOWN, Process.SYSTEM_UID);
+                                config, GroupEvent.GROUP_UNKNOWN, Process.SYSTEM_UID, null);
                         smTransition(this, mUserAuthorizingNegotiationRequestState);
                         break;
                     case WifiP2pMonitor.P2P_INVITATION_RECEIVED_EVENT:
@@ -3736,7 +3739,7 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                         mJoinExistingGroup = true;
                         mWifiP2pMetrics.startConnectionEvent(
                                 P2pConnectionEvent.CONNECTION_FRESH,
-                                config, GroupEvent.GROUP_UNKNOWN, Process.SYSTEM_UID);
+                                config, GroupEvent.GROUP_UNKNOWN, Process.SYSTEM_UID, null);
                         smTransition(this, mUserAuthorizingInviteRequestState);
                         break;
                     case WifiP2pMonitor.P2P_PROV_DISC_PBC_REQ_EVENT:
@@ -3778,13 +3781,14 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                             break;
                         }
                         int uid = message.sendingUid;
+                        String attributionTag = getCallingFeatureId(uid, message.replyTo);
                         Bundle extras = message.getData()
                                 .getBundle(WifiP2pManager.EXTRA_PARAM_KEY_BUNDLE);
                         boolean hasPermission;
                         if (isPlatformOrTargetSdkLessThanT(packageName, uid)) {
                             hasPermission = mWifiPermissionsUtil.checkCanAccessWifiDirect(
                                     packageName,
-                                    getCallingFeatureId(message.sendingUid, message.replyTo),
+                                    attributionTag,
                                     uid, false);
                         } else {
                             hasPermission = checkNearbyDevicesPermission(uid, packageName,
@@ -3812,7 +3816,7 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                                 }
                                 reportConnectionEventTakeBugReportIfOverlapped(
                                         P2pConnectionEvent.CONNECTION_FAST,
-                                        config, GroupEvent.GROUP_OWNER, uid);
+                                        config, GroupEvent.GROUP_OWNER, uid, attributionTag);
                                 ret = mWifiNative.p2pGroupAdd(config, false);
                             }
                         } else if (netId == WifiP2pGroup.NETWORK_ID_PERSISTENT) {
@@ -3821,18 +3825,18 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                             if (netId != -1) {
                                 mWifiP2pMetrics.startConnectionEvent(
                                         P2pConnectionEvent.CONNECTION_REINVOKE,
-                                        null, GroupEvent.GROUP_OWNER, uid);
+                                        null, GroupEvent.GROUP_OWNER, uid, attributionTag);
                                 ret = mWifiNative.p2pGroupAdd(netId);
                             } else {
                                 mWifiP2pMetrics.startConnectionEvent(
                                         P2pConnectionEvent.CONNECTION_LOCAL,
-                                        null, GroupEvent.GROUP_OWNER, uid);
+                                        null, GroupEvent.GROUP_OWNER, uid, attributionTag);
                                 ret = mWifiNative.p2pGroupAdd(true);
                             }
                         } else {
                             mWifiP2pMetrics.startConnectionEvent(
                                     P2pConnectionEvent.CONNECTION_LOCAL,
-                                    null, GroupEvent.GROUP_OWNER, uid);
+                                    null, GroupEvent.GROUP_OWNER, uid, attributionTag);
                             ret = mWifiNative.p2pGroupAdd(false);
                         }
 
