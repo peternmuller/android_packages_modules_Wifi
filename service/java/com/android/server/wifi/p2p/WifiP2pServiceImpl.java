@@ -4648,6 +4648,8 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
                         }
 
                         mWifiNative.setP2pGroupIdle(mGroup.getInterface(), GROUP_IDLE_TIME_S);
+                        Log.d(TAG, "start Ip client with provisioning mode: "
+                                + mSavedPeerConfig.getGroupClientIpProvisioningMode());
                         startIpClient(mGroup.getInterface(), getHandler(),
                                 mSavedPeerConfig.getGroupClientIpProvisioningMode(),
                                 mGroup.p2pClientEapolIpInfo);
@@ -5655,12 +5657,9 @@ public class WifiP2pServiceImpl extends IWifiP2pManager.Stub {
 
         public boolean isWifiP2pAvailable() {
             if (mIsP2pDisallowedByAdmin) return false;
-            if (mFeatureFlags.d2dWhenInfraStaOff()) {
-                return mIsWifiEnabled
-                        || (mSettingsConfigStore.get(D2D_ALLOWED_WHEN_INFRA_STA_DISABLED)
-                                && mWifiGlobals.isD2dSupportedWhenInfraStaDisabled());
-            }
-            return mIsWifiEnabled;
+            return mIsWifiEnabled
+                    || (mSettingsConfigStore.get(D2D_ALLOWED_WHEN_INFRA_STA_DISABLED)
+                            && mWifiGlobals.isD2dSupportedWhenInfraStaDisabled());
         }
 
         public void checkAndSendP2pStateChangedBroadcast() {
