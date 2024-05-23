@@ -5783,4 +5783,14 @@ public class WifiNative {
     public boolean getStatsTwtSession(int commandId, String interfaceName, int sessionId) {
         return mWifiVendorHal.getStatsTwtSession(commandId, interfaceName, sessionId);
     }
+
+    /**
+     * Sets the wifi VoIP mode.
+     *
+     * @param mode Voip mode as defined by the enum |WifiVoipMode|
+     * @return true if successful, false otherwise.
+     */
+    public boolean setVoipMode(@WifiChip.WifiVoipMode int mode) {
+        return mWifiVendorHal.setVoipMode(mode);
+    }
 }
