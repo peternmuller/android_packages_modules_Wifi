@@ -1030,7 +1030,7 @@ public class WifiServiceImpl extends BaseWifiService {
         // before memory store write triggered by mMemoryStoreImpl.stop().
         mWifiScoreCard.resetAllConnectionStates();
         mMemoryStoreImpl.stop();
-        mWifiConfigManager.handleShutDown();
+        mWifiConfigManager.writeDataToStorage();
     }
 
     private boolean checkNetworkSettingsPermission(int pid, int uid) {
