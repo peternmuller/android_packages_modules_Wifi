@@ -1700,6 +1700,7 @@ public class ActiveModeWarden {
                 invokeOnPrimaryClientModeManagerChangedCallbacks(
                         mLastPrimaryClientModeManager, clientModeManager);
                 mLastPrimaryClientModeManager = clientModeManager;
+                setCurrentNetwork(clientModeManager.getCurrentNetwork());
             }
             setSupportedFeatureSet(
                     // If primary doesn't exist, DefaultClientModeManager getInterfaceName name
@@ -2306,6 +2307,7 @@ public class ActiveModeWarden {
                         // those secondary CMMs knows to abort properly, and won't react in strange
                         // ways to the primary switching to scan only mode later.
                         stopSecondaryClientModeManagers();
+                        mWifiInjector.getWifiConnectivityManager().resetOnWifiDisable();
                     }
                     switchAllPrimaryOrScanOnlyClientModeManagers();
                 } else {
@@ -2313,6 +2315,7 @@ public class ActiveModeWarden {
                 }
             } else {
                 stopAllClientModeManagers();
+                mWifiInjector.getWifiConnectivityManager().resetOnWifiDisable();
             }
         }
 

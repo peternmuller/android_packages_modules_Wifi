@@ -188,6 +188,7 @@ public class ActiveModeWardenTest extends WifiBaseTest {
     @Mock WifiSettingsConfigStore mSettingsConfigStore;
     @Mock LastCallerInfoManager mLastCallerInfoManager;
     @Mock WifiGlobals mWifiGlobals;
+    @Mock WifiConnectivityManager mWifiConnectivityManager;
 
     Listener<ConcreteClientModeManager> mClientListener;
     Listener<SoftApManager> mSoftApListener;
@@ -220,6 +221,7 @@ public class ActiveModeWardenTest extends WifiBaseTest {
         when(mWifiInjector.getHalDeviceManager()).thenReturn(mHalDeviceManager);
         when(mWifiInjector.getUserManager()).thenReturn(mUserManager);
         when(mWifiInjector.getWifiHandlerLocalLog()).thenReturn(mLocalLog);
+        when(mWifiInjector.getWifiConnectivityManager()).thenReturn(mWifiConnectivityManager);
         when(mClientModeManager.getRole()).thenReturn(ROLE_CLIENT_PRIMARY);
         when(mClientModeManager.getInterfaceName()).thenReturn(WIFI_IFACE_NAME);
         when(mContext.getResources()).thenReturn(mResources);
@@ -377,6 +379,8 @@ public class ActiveModeWardenTest extends WifiBaseTest {
         when(mSettingsStore.isWifiToggleEnabled()).thenReturn(true);
         mActiveModeWarden.wifiToggled(TEST_WORKSOURCE);
         mLooper.dispatchAll();
+        assertNull(mActiveModeWarden.getCurrentNetwork());
+
         when(mClientModeManager.getRole()).thenReturn(ROLE_CLIENT_PRIMARY);
         when(mClientModeManager.getCurrentNetwork()).thenReturn(mNetwork);
         when(mWifiNative.getSupportedFeatureSet(WIFI_IFACE_NAME)).thenReturn(testFeatureSet);
@@ -404,6 +408,7 @@ public class ActiveModeWardenTest extends WifiBaseTest {
         verify(mScanRequestProxy, times(4)).enableScanning(true, true);
         assertEquals(mClientModeManager, mActiveModeWarden.getPrimaryClientModeManager());
         verify(mModeChangeCallback).onActiveModeManagerRoleChanged(mClientModeManager);
+        assertEquals(mNetwork, mActiveModeWarden.getCurrentNetwork());
     }
 
     private void enterScanOnlyModeActiveState() throws Exception {
@@ -802,6 +807,7 @@ public class ActiveModeWardenTest extends WifiBaseTest {
         assertTrue(currentCMMs.stream().anyMatch(cmm -> cmm.getRole() == ROLE_CLIENT_PRIMARY));
         assertTrue(currentCMMs.stream().anyMatch(
                 cmm -> cmm.getRole() == ROLE_CLIENT_SECONDARY_TRANSIENT));
+        verify(mWifiConnectivityManager, never()).resetOnWifiDisable();
 
         InOrder inOrder = inOrder(additionalClientModeManager, mClientModeManager);
         // disable wifi and switch primary CMM to scan only mode
@@ -816,6 +822,7 @@ public class ActiveModeWardenTest extends WifiBaseTest {
         // mode
         inOrder.verify(additionalClientModeManager).stop();
         inOrder.verify(mClientModeManager).setRole(ROLE_CLIENT_SCAN_ONLY, INTERNAL_REQUESTOR_WS);
+        verify(mWifiConnectivityManager).resetOnWifiDisable();
     }
 
     /**
@@ -2688,7 +2695,6 @@ public class ActiveModeWardenTest extends WifiBaseTest {
 
         verify(mClientModeManager, atLeastOnce()).getInterfaceName();
         verify(mClientModeManager, atLeastOnce()).getPreviousRole();
-        verifyNoMoreInteractions(mClientModeManager, mSoftApManager);
     }
 
     /**
