@@ -1020,6 +1020,9 @@ public class WifiServiceImpl extends BaseWifiService {
     }
 
     private void handleShutDown() {
+        if (mVerboseLoggingEnabled) {
+            Log.v(TAG, "handleShutDown");
+        }
         // Direct call to notify ActiveModeWarden as soon as possible with the assumption that
         // notifyShuttingDown() doesn't have codes that may cause concurrentModificationException,
         // e.g., access to a collection.
@@ -7459,7 +7462,10 @@ public class WifiServiceImpl extends BaseWifiService {
             if ((band & ScanResult.toBand(freq)) == 0) {
                 continue;
             }
-            channels.add(new WifiAvailableChannel(freq, WifiAvailableChannel.OP_MODE_SAP));
+            // TODO b/340956906: Save and retrieve channel width in config store along with
+            //  frequency.
+            channels.add(new WifiAvailableChannel(freq, WifiAvailableChannel.OP_MODE_SAP,
+                    ScanResult.CHANNEL_WIDTH_20MHZ));
         }
         return channels;
     }
@@ -7783,6 +7789,10 @@ public class WifiServiceImpl extends BaseWifiService {
             @NonNull List<DhcpOption> options) {
         enforceAnyPermissionOf(android.Manifest.permission.NETWORK_SETTINGS,
                 android.Manifest.permission.OVERRIDE_WIFI_CONFIG);
+        if (mVerboseLoggingEnabled) {
+            Log.v(TAG, "addCustomDhcpOptions: ssid="
+                    + ssid + ", oui=" + Arrays.toString(oui) + ", options=" + options);
+        }
         mWifiThreadRunner.post(() -> mWifiConfigManager.addCustomDhcpOptions(ssid, oui, options),
                 TAG + "#addCustomDhcpOptions");
     }
@@ -7794,6 +7804,9 @@ public class WifiServiceImpl extends BaseWifiService {
     public void removeCustomDhcpOptions(@NonNull WifiSsid ssid, @NonNull byte[] oui) {
         enforceAnyPermissionOf(android.Manifest.permission.NETWORK_SETTINGS,
                 android.Manifest.permission.OVERRIDE_WIFI_CONFIG);
+        if (mVerboseLoggingEnabled) {
+            Log.v(TAG, "removeCustomDhcpOptions: ssid=" + ssid + ", oui=" + Arrays.toString(oui));
+        }
         mWifiThreadRunner.post(() -> mWifiConfigManager.removeCustomDhcpOptions(ssid, oui),
                 TAG + "#removeCustomDhcpOptions");
     }
@@ -8466,13 +8479,14 @@ public class WifiServiceImpl extends BaseWifiService {
     /**
      * Force Overlay Config for testing
      */
-    public boolean forceOverlayConfigValue(String configString, String value, boolean isEnabled) {
+    public boolean forceOverlayConfigValue(String overlayName, String configValue,
+            boolean isEnabled) {
         int uid = Binder.getCallingUid();
         if (!mWifiPermissionsUtil.checkNetworkSettingsPermission(uid)) {
             throw new SecurityException(TAG + " Uid " + uid
                     + " Missing NETWORK_SETTINGS permission");
         }
-        return mWifiGlobals.forceOverlayConfigValue(configString, value, isEnabled);
+        return mWifiGlobals.forceOverlayConfigValue(overlayName, configValue, isEnabled);
     }
 
     /**
