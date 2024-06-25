@@ -86,6 +86,7 @@ public class WifiGlobals {
     private boolean mIsBackgroundScanSupported;
     private boolean mIsSwPnoEnabled;
     private boolean mIsWepDeprecated;
+    private boolean mWepAllowedControlSupported;
     private final boolean mIsWpaPersonalDeprecated;
     // This is read from the overlay, cache it after boot up.
     private final boolean mIsDisconnectOnlyOnInitialIpReachability;
@@ -170,6 +171,8 @@ public class WifiGlobals {
                 .getBoolean(R.bool.config_wifiSwPnoEnabled);
         mIsWepDeprecated = mContext.getResources()
                 .getBoolean(R.bool.config_wifiWepDeprecated);
+        mWepAllowedControlSupported = mContext.getResources()
+                .getBoolean(R.bool.config_wifiWepAllowedControlSupported);
         mIsWpaPersonalDeprecated = mContext.getResources()
                 .getBoolean(R.bool.config_wifiWpaPersonalDeprecated);
         mIsAfcSupportedOnDevice = mContext.getResources().getBoolean(R.bool.config_wifiAfcSupported)
@@ -387,7 +390,7 @@ public class WifiGlobals {
      * @return boolean true if WEP networks are deprecated, false otherwise.
      */
     public boolean isWepDeprecated() {
-        return mIsWepDeprecated || !mIsWepAllowed.get();
+        return mIsWepDeprecated || (mWepAllowedControlSupported && !mIsWepAllowed.get());
     }
 
     /**
@@ -762,6 +765,7 @@ public class WifiGlobals {
         pw.println("mIsWepDeprecated=" + mIsWepDeprecated);
         pw.println("mIsWpaPersonalDeprecated=" + mIsWpaPersonalDeprecated);
         pw.println("mIsWepAllowed=" + mIsWepAllowed.get());
+        pw.println("mWepAllowedControlSupported=" + mWepAllowedControlSupported);
         pw.println("mDisableFirmwareRoamingInIdleMode=" + mDisableFirmwareRoamingInIdleMode);
         pw.println("mIsDisconnectOnlyOnInitialIpReachability=" + mIsDisconnectOnlyOnInitialIpReachability);
         pw.println("mRepeatedNudFailuresThreshold=" + mRepeatedNudFailuresThreshold);
