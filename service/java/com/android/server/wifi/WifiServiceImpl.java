@@ -112,6 +112,7 @@ import android.net.wifi.ILastCallerListener;
 import android.net.wifi.IListListener;
 import android.net.wifi.ILocalOnlyConnectionStatusListener;
 import android.net.wifi.ILocalOnlyHotspotCallback;
+import android.net.wifi.IMacAddressListListener;
 import android.net.wifi.IMapListener;
 import android.net.wifi.INetworkRequestMatchCallback;
 import android.net.wifi.IOnWifiActivityEnergyInfoListener;
@@ -167,6 +168,7 @@ import android.net.wifi.twt.TwtRequest;
 import android.net.wifi.twt.TwtSession;
 import android.net.wifi.twt.TwtSessionCallback;
 import android.net.wifi.util.ScanResultUtil;
+import android.net.wifi.util.WifiResourceCache;
 import android.os.AsyncTask;
 import android.os.Binder;
 import android.os.Build;
@@ -191,6 +193,7 @@ import android.telephony.PhoneStateListener;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
+import android.util.ArraySet;
 import android.util.EventLog;
 import android.util.Log;
 import android.util.Pair;
@@ -332,6 +335,7 @@ public class WifiServiceImpl extends BaseWifiService {
     private static final String CERT_INSTALLER_PKG = "com.android.certinstaller";
 
     private final WifiSettingsConfigStore mSettingsConfigStore;
+    private final WifiResourceCache mWifiResourceCache;
 
     /**
      * Callback for use with LocalOnlyHotspot to unregister requesting applications upon death.
@@ -512,6 +516,7 @@ public class WifiServiceImpl extends BaseWifiService {
 
     public WifiServiceImpl(WifiContext context, WifiInjector wifiInjector) {
         mContext = context;
+        mWifiResourceCache = mContext.getResourceCache();
         mWifiInjector = wifiInjector;
         mClock = wifiInjector.getClock();
 
@@ -1020,6 +1025,9 @@ public class WifiServiceImpl extends BaseWifiService {
     }
 
     private void handleShutDown() {
+        if (mVerboseLoggingEnabled) {
+            Log.v(TAG, "handleShutDown");
+        }
         // Direct call to notify ActiveModeWarden as soon as possible with the assumption that
         // notifyShuttingDown() doesn't have codes that may cause concurrentModificationException,
         // e.g., access to a collection.
@@ -1030,7 +1038,7 @@ public class WifiServiceImpl extends BaseWifiService {
         // before memory store write triggered by mMemoryStoreImpl.stop().
         mWifiScoreCard.resetAllConnectionStates();
         mMemoryStoreImpl.stop();
-        mWifiConfigManager.handleShutDown();
+        mWifiConfigManager.writeDataToStorage();
     }
 
     private boolean checkNetworkSettingsPermission(int pid, int uid) {
@@ -4354,6 +4362,52 @@ public class WifiServiceImpl extends BaseWifiService {
     }
 
     /**
+     * See {@link WifiManager#getBssidBlocklist(List, Executor, Consumer)}
+     * @param ssids the list of ssids to get BSSID blocklist for.
+     * @param listener returns the results
+     */
+    @Override
+    public void getBssidBlocklist(@NonNull ParceledListSlice<WifiSsid> ssids,
+            @NonNull IMacAddressListListener listener) {
+        if (ssids == null) {
+            throw new IllegalArgumentException("Null ssids");
+        }
+        if (listener == null) {
+            throw new IllegalArgumentException("Null listener");
+        }
+        int uid = Binder.getCallingUid();
+        if (!mWifiPermissionsUtil.checkNetworkSettingsPermission(uid)
+                && !mWifiPermissionsUtil.checkNetworkSetupWizardPermission(uid)) {
+            throw new SecurityException("No permission to call getBssidBlocklist");
+        }
+        Set<String> ssidSet;
+        if (!ssids.getList().isEmpty()) {
+            ssidSet = new ArraySet<>();
+            for (WifiSsid ssid : ssids.getList()) {
+                ssidSet.add(ssid.toString());
+            }
+        } else {
+            ssidSet = null;
+        }
+        mWifiThreadRunner.post(() -> {
+            try {
+                List<String> bssids = mWifiBlocklistMonitor.getBssidBlocklistForSsids(ssidSet);
+                List<MacAddress> macAddresses = new ArrayList<>();
+                for (String bssid : bssids) {
+                    try {
+                        macAddresses.add(MacAddress.fromString(bssid));
+                    } catch (Exception e) {
+                        Log.e(TAG, "getBssidBlocklist failed to convert MAC address: " + bssid);
+                    }
+                }
+                listener.onResult(new ParceledListSlice(macAddresses));
+            } catch (RemoteException e) {
+                Log.e(TAG, e.getMessage(), e);
+            }
+        }, TAG + "#getBssidBlocklist");
+    }
+
+    /**
      * See {@link android.net.wifi.WifiManager
      * #setMacRandomizationSettingPasspointEnabled(String, boolean)}
      * @param fqdn the FQDN that identifies the passpoint configuration
@@ -5552,6 +5606,8 @@ public class WifiServiceImpl extends BaseWifiService {
                     pw.println();
                     mWifiInjector.getWifiVoipDetector().dump(fd, pw, args);
                 }
+                pw.println();
+                mWifiResourceCache.dump(pw);
             }
         }, TAG + "#dump");
     }
@@ -6650,7 +6706,10 @@ public class WifiServiceImpl extends BaseWifiService {
     public void connect(WifiConfiguration config, int netId, @Nullable IActionListener callback,
             @NonNull String packageName, Bundle extras) {
         int uid = getMockableCallingUid();
-        if (!isPrivileged(Binder.getCallingPid(), uid)) {
+        if (!isPrivileged(Binder.getCallingPid(), uid)
+                // TODO(b/343881335): Longer term, we need a specific permission
+                // for NFC.
+                && UserHandle.getAppId(uid) != Process.NFC_UID) {
             throw new SecurityException(TAG + ": Permission denied");
         }
         if (packageName == null) {
@@ -7459,7 +7518,10 @@ public class WifiServiceImpl extends BaseWifiService {
             if ((band & ScanResult.toBand(freq)) == 0) {
                 continue;
             }
-            channels.add(new WifiAvailableChannel(freq, WifiAvailableChannel.OP_MODE_SAP));
+            // TODO b/340956906: Save and retrieve channel width in config store along with
+            //  frequency.
+            channels.add(new WifiAvailableChannel(freq, WifiAvailableChannel.OP_MODE_SAP,
+                    ScanResult.CHANNEL_WIDTH_20MHZ));
         }
         return channels;
     }
@@ -7783,6 +7845,10 @@ public class WifiServiceImpl extends BaseWifiService {
             @NonNull List<DhcpOption> options) {
         enforceAnyPermissionOf(android.Manifest.permission.NETWORK_SETTINGS,
                 android.Manifest.permission.OVERRIDE_WIFI_CONFIG);
+        if (mVerboseLoggingEnabled) {
+            Log.v(TAG, "addCustomDhcpOptions: ssid="
+                    + ssid + ", oui=" + Arrays.toString(oui) + ", options=" + options);
+        }
         mWifiThreadRunner.post(() -> mWifiConfigManager.addCustomDhcpOptions(ssid, oui, options),
                 TAG + "#addCustomDhcpOptions");
     }
@@ -7794,6 +7860,9 @@ public class WifiServiceImpl extends BaseWifiService {
     public void removeCustomDhcpOptions(@NonNull WifiSsid ssid, @NonNull byte[] oui) {
         enforceAnyPermissionOf(android.Manifest.permission.NETWORK_SETTINGS,
                 android.Manifest.permission.OVERRIDE_WIFI_CONFIG);
+        if (mVerboseLoggingEnabled) {
+            Log.v(TAG, "removeCustomDhcpOptions: ssid=" + ssid + ", oui=" + Arrays.toString(oui));
+        }
         mWifiThreadRunner.post(() -> mWifiConfigManager.removeCustomDhcpOptions(ssid, oui),
                 TAG + "#removeCustomDhcpOptions");
     }
@@ -8461,18 +8530,6 @@ public class WifiServiceImpl extends BaseWifiService {
                 Log.e(TAG, e.getMessage(), e);
             }
         }, TAG + "#querySendDhcpHostnameRestriction");
-    }
-
-    /**
-     * Force Overlay Config for testing
-     */
-    public boolean forceOverlayConfigValue(String configString, String value, boolean isEnabled) {
-        int uid = Binder.getCallingUid();
-        if (!mWifiPermissionsUtil.checkNetworkSettingsPermission(uid)) {
-            throw new SecurityException(TAG + " Uid " + uid
-                    + " Missing NETWORK_SETTINGS permission");
-        }
-        return mWifiGlobals.forceOverlayConfigValue(configString, value, isEnabled);
     }
 
     /**

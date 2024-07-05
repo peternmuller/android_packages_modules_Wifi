@@ -2809,7 +2809,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
          * set Tx link speed only if it is valid
          */
         if (newTxLinkSpeed > 0) {
-            if (newTxLinkSpeed != mWifiInfo.getTxLinkSpeedMbps()) {
+            if (newTxLinkSpeed != mWifiInfo.getTxLinkSpeedMbps() && SdkLevel.isAtLeastV()) {
                 updateNetworkCapabilities = true;
             }
             mWifiInfo.setLinkSpeed(newTxLinkSpeed);
@@ -2819,7 +2819,7 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
          * set Rx link speed only if it is valid
          */
         if (newRxLinkSpeed > 0) {
-            if (newRxLinkSpeed != mWifiInfo.getRxLinkSpeedMbps()) {
+            if (newRxLinkSpeed != mWifiInfo.getRxLinkSpeedMbps() && SdkLevel.isAtLeastV()) {
                 updateNetworkCapabilities = true;
             }
             mWifiInfo.setRxLinkSpeedMbps(newRxLinkSpeed);
@@ -3534,6 +3534,10 @@ public class ClientModeImpl extends StateMachine implements ClientMode {
                 mWakeupController.setLastDisconnectInfo(matchInfo);
             }
             mRssiMonitor.reset();
+            // On disconnect, restore roaming mode to normal
+            if (!newConnectionInProgress) {
+                enableRoaming(true);
+            }
         }
 
         clearTargetBssid("handleNetworkDisconnect");

@@ -25,13 +25,8 @@ import android.media.AudioManager;
 import android.os.Build;
 import android.os.Handler;
 import android.telephony.CallAttributes;
-import android.telephony.SubscriptionInfo;
-import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyCallback;
 import android.telephony.TelephonyManager;
-import android.telephony.ims.ImsMmTelManager;
-import android.telephony.ims.feature.MmTelFeature;
-import android.telephony.ims.stub.ImsRegistrationImplBase;
 import android.util.LocalLog;
 import android.util.Log;
 
@@ -44,7 +39,6 @@ import com.android.server.wifi.hal.WifiChip;
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -60,6 +54,7 @@ public class WifiVoipDetector {
     private final WifiInjector mWifiInjector;
     private final LocalLog mLocalLog;
 
+    private final WifiCarrierInfoManager mWifiCarrierInfoManager;
 
     private AudioManager mAudioManager;
     private TelephonyManager mTelephonyManager;
@@ -77,11 +72,13 @@ public class WifiVoipDetector {
     private Map<String, Boolean> mConnectedWifiIfaceMap = new HashMap<>();
 
     public WifiVoipDetector(@NonNull Context context, @NonNull Handler handler,
-            @NonNull WifiInjector wifiInjector) {
+            @NonNull WifiInjector wifiInjector,
+            @NonNull WifiCarrierInfoManager wifiCarrierInfoManager) {
         mContext = context;
         mHandler = handler;
         mHandlerExecutor = new HandlerExecutor(mHandler);
         mWifiInjector = wifiInjector;
+        mWifiCarrierInfoManager = wifiCarrierInfoManager;
         mLocalLog = new LocalLog(32);
     }
 
@@ -98,8 +95,13 @@ public class WifiVoipDetector {
 
         @Override
         public void onCallAttributesChanged(@NonNull CallAttributes callAttributes) {
-            mIsVoWifiOn = callAttributes.getNetworkType() == TelephonyManager.NETWORK_TYPE_IWLAN;
-            String log = (mIsVoWifiOn ? "Enter" : "Leave") + "IWLAN Call";
+            boolean isVoWifion = callAttributes.getNetworkType()
+                    == TelephonyManager.NETWORK_TYPE_IWLAN;
+            if (isVoWifion == mIsVoWifiOn) {
+                return;
+            }
+            mIsVoWifiOn = isVoWifion;
+            String log = (mIsVoWifiOn ? "Enter" : "Leave") + " IWLAN Call";
             mLocalLog.log(log);
             if (mVerboseLoggingEnabled) {
                 Log.d(TAG, log);
@@ -112,8 +114,12 @@ public class WifiVoipDetector {
     public class AudioModeListener implements AudioManager.OnModeChangedListener {
         @Override
         public void onModeChanged(int audioMode) {
-            mIsOTTCallOn = audioMode == MODE_IN_COMMUNICATION
+            boolean isOTTCallOn = audioMode == MODE_IN_COMMUNICATION
                     || audioMode == MODE_COMMUNICATION_REDIRECT;
+            if (isOTTCallOn == mIsOTTCallOn) {
+                return;
+            }
+            mIsOTTCallOn = isOTTCallOn;
             String log = "Audio mode (" + (mIsOTTCallOn ? "Enter" : "Leave")
                     + " OTT) onModeChanged to " + audioMode;
             mLocalLog.log(log);
@@ -172,7 +178,7 @@ public class WifiVoipDetector {
         if (mCurrentMode != newMode) {
             String log = "Update voip over wifi to new mode: " + newMode;
             if (!mWifiInjector.getWifiNative().setVoipMode(newMode)) {
-                log = "Failed to set Voip Mode (maybe not supported?)";
+                log = "Failed to set Voip Mode to " + newMode + " (maybe not supported?)";
             } else {
                 mCurrentMode = newMode;
             }
@@ -201,7 +207,7 @@ public class WifiVoipDetector {
             mAudioModeListener = new AudioModeListener();
         }
         if (mTelephonyManager != null) {
-            mIsVoWifiOn = isWifiCallingAvailable();
+            mIsVoWifiOn = mWifiCarrierInfoManager.isWifiCallingAvailable();
             mTelephonyManager.registerTelephonyCallback(
                      mHandlerExecutor, mWifiCallingStateListener);
         }
@@ -243,36 +249,5 @@ public class WifiVoipDetector {
         pw.println("mIsVoWifiOn = " + mIsVoWifiOn);
         pw.println("mIsWifiConnected = " + mIsWifiConnected);
         pw.println("mCurrentMode = " + mCurrentMode);
-    }
-
-    // TODO: Public this API and update all caller to use one place to detect VoWifi call
-    private boolean isWifiCallingAvailable() {
-        SubscriptionManager subscriptionManager =
-                mContext.getSystemService(SubscriptionManager.class);
-        if (subscriptionManager == null) {
-            Log.d(TAG, "SubscriptionManager not found");
-            return false;
-        }
-
-        List<SubscriptionInfo> subInfoList = subscriptionManager
-                .getCompleteActiveSubscriptionInfoList();
-        if (subInfoList == null) {
-            Log.d(TAG, "Active SubscriptionInfo list not found");
-            return false;
-        }
-        for (SubscriptionInfo subInfo : subInfoList) {
-            int subscriptionId = subInfo.getSubscriptionId();
-            try {
-                if (ImsMmTelManager.createForSubscriptionId(subscriptionId).isAvailable(
-                        MmTelFeature.MmTelCapabilities.CAPABILITY_TYPE_VOICE,
-                        ImsRegistrationImplBase.REGISTRATION_TECH_IWLAN)) {
-                    Log.d(TAG, "WifiCalling is available on subId " + subscriptionId);
-                    return true;
-                }
-            } catch (RuntimeException e) {
-                Log.d(TAG, "RuntimeException while checking if wifi calling is available: " + e);
-            }
-        }
-        return false;
     }
 }

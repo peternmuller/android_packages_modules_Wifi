@@ -63,9 +63,26 @@ flag {
 }
 
 flag {
+    name: "get_channel_width_api"
+    namespace: "wifi"
+    description: "Add new API to get channel width"
+    bug: "335358378"
+    is_fixed_read_only: true
+}
+
+flag {
     name: "voip_detection"
     namespace: "wifi"
     description: "Detect VoIP over Wifi and execute optimization"
     bug: "295885471"
+    is_fixed_read_only: true
+}
+
+flag {
+    name: "get_bssid_blocklist_api"
+    is_exported: true
+    namespace: "wifi"
+    description: "Add new API to get BSSID blocklist"
+    bug: "336109216"
     is_fixed_read_only: true
 }
