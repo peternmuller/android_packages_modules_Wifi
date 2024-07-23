@@ -536,7 +536,7 @@ public class SoftApManager implements ActiveModeManager {
                         == SoftApConfiguration.SECURITY_TYPE_WPA3_OWE_TRANSITION);
     }
 
-    public boolean isBridgedMode() {
+    private boolean isBridgedMode() {
         return (SdkLevel.isAtLeastS() && mCurrentSoftApConfiguration != null
                 && (mCurrentSoftApConfiguration.getBands().length > 1));
     }

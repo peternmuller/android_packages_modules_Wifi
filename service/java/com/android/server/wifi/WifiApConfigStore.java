@@ -440,6 +440,20 @@ public class WifiApConfigStore {
             Log.wtf(TAG, "Generated password was invalid: " + e);
         }
 
+        // It is new overlay configuration, it should always false in R. Add SdkLevel.isAtLeastS for
+        // lint check
+        if (SdkLevel.isAtLeastS()) {
+            boolean isBridgedModeSupported = mHalDeviceManager.isConcurrencyComboLoadedFromDriver()
+                    ? ApConfigUtil.isBridgedModeSupported(mContext, mWifiNative)
+                            : ApConfigUtil.isBridgedModeSupportedInConfig(mContext);
+            if (isBridgedModeSupported) {
+                int[] dual_bands = new int[] {
+                        SoftApConfiguration.BAND_2GHZ,
+                        SoftApConfiguration.BAND_2GHZ | SoftApConfiguration.BAND_5GHZ};
+                configBuilder.setBands(dual_bands);
+            }
+        }
+
         // Update default MAC randomization setting to NONE when feature doesn't support it.
         if (!ApConfigUtil.isApMacRandomizationSupported(mContext)) {
             if (SdkLevel.isAtLeastS()) {
