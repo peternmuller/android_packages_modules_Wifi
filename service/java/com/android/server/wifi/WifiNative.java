@@ -5250,10 +5250,6 @@ public class WifiNative {
         return true;
     }
 
-    public boolean needToDeleteIfacesDueToBridgeMode(int ifaceType, WorkSource requestorWs) {
-       return mWifiVendorHal.needToDeleteIfacesDueToBridgeMode(ifaceType, requestorWs);
-    }
-
     /**
      * Gets the security params of the current network associated with this interface
      *

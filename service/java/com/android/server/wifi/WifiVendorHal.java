@@ -2039,11 +2039,6 @@ public class WifiVendorHal {
             return iface.setDtimMultiplier(multiplier);
         }
     }
-
-    public boolean needToDeleteIfacesDueToBridgeMode(int ifaceType, WorkSource requestorWs) {
-       return mHalDeviceManager.needToDeleteIfacesDueToBridgeMode(ifaceType, requestorWs);
-    }
-
     /**
      * Set the Multi-Link Operation mode.
      *
